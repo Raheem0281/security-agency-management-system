@@ -1,61 +1,53 @@
 "use client";
-import { useState, useEffect } from "react";
-import API from "../../services/api";
+
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export default function Login() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+export default function LoginPage() {
   const router = useRouter();
 
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
-  useEffect(() => {
-  const token = localStorage.getItem("token");
-  if (token) {
-    router.push("/dashboard");
-  }
-}, []);
-
-
-  const handleLogin = async () => {
-    try {
-      const res = await API.post("/auth/login", {
-        email,
-        password,
-      });
-
-      const token = res.data.data.token;
-
-      localStorage.setItem("token", token);
-
-      alert("Login Successful ✅");
+  const handleLogin = () => {
+    if (email && password) {
+      localStorage.setItem("token", "admin-token");
       router.push("/dashboard");
-    } catch (error) {
-      alert("Login Failed ❌");
+    } else {
+      alert("Please enter email & password");
     }
   };
 
   return (
-    <div className="flex h-screen justify-center items-center bg-gray-100">
-      <div className="bg-white p-6 rounded shadow w-80">
-        <h2 className="text-xl font-bold mb-4 text-center">Login</h2>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-blue-900 via-black to-gray-900">
+
+      <div className="bg-white/10 backdrop-blur-lg p-10 rounded-2xl shadow-2xl w-[400px] border border-white/20 animate-pulse">
+
+        <h1 className="text-4xl font-bold text-center text-white mb-2">
+          Security Agency
+        </h1>
+
+        <p className="text-center text-gray-300 mb-8">
+          Admin Login Panel
+        </p>
 
         <input
-          className="border p-2 w-full mb-3"
-          placeholder="Email"
+          type="email"
+          placeholder="Enter Email"
+          className="w-full p-3 rounded-lg mb-4 bg-white/20 text-white outline-none border border-gray-500"
           onChange={(e) => setEmail(e.target.value)}
         />
 
         <input
-          className="border p-2 w-full mb-3"
           type="password"
-          placeholder="Password"
+          placeholder="Enter Password"
+          className="w-full p-3 rounded-lg mb-6 bg-white/20 text-white outline-none border border-gray-500"
           onChange={(e) => setPassword(e.target.value)}
         />
 
         <button
           onClick={handleLogin}
-          className="bg-blue-500 text-white w-full p-2 rounded"
+          className="w-full bg-blue-600 hover:bg-blue-700 transition-all duration-300 text-white py-3 rounded-lg font-bold"
         >
           Login
         </button>

@@ -1,134 +1,182 @@
 "use client";
 
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
-import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-const chartData = [
-  { day: "Mon", attendance: 8 },
-  { day: "Tue", attendance: 10 },
-  { day: "Wed", attendance: 7 },
-  { day: "Thu", attendance: 12 },
-  { day: "Fri", attendance: 9 },
-];
-
-export default function Dashboard() {
+export default function DashboardPage() {
   const router = useRouter();
 
-  // ================= STATES =================
-  const [loading, setLoading] = useState(true);
+  const stats = [
+    {
+      title: "Total Guards",
+      value: "45",
+      color: "bg-blue-500",
+    },
+    {
+      title: "Active Duties",
+      value: "18",
+      color: "bg-green-500",
+    },
+    {
+      title: "Clients",
+      value: "12",
+      color: "bg-purple-500",
+    },
+    {
+      title: "Monthly Revenue",
+      value: "$978K",
+      color: "bg-orange-500",
+    },
+  ];
 
-  const [stats, setStats] = useState([
-    { title: "Total Guards", value: 0 },
-    { title: "Total Clients", value: 0 },
-    { title: "Active Duties", value: 0 },
-    { title: "Attendance Today", value: 0 },
-  ]);
-
-  // ================= AUTH CHECK =================
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-      router.push("/login");
-      return;
-    }
-
-    loadDashboard();
-  }, []);
-
-  // ================= FETCH DATA (API READY) =================
-  const loadDashboard = async () => {
-    setLoading(true);
-
-    try {
-      // 🔥 FUTURE API CALL
-      // const res = await API.get("/dashboard");
-      // setStats(res.data.stats);
-
-      // 🔴 TEMP DATA (replace later)
-      setTimeout(() => {
-        setStats([
-          { title: "Total Guards", value: 12 },
-          { title: "Total Clients", value: 5 },
-          { title: "Active Duties", value: 8 },
-          { title: "Attendance Today", value: 10 },
-        ]);
-
-        setLoading(false);
-      }, 700);
-
-    } catch (error) {
-      console.log(error);
-      setLoading(false);
-    }
-  };
-
-  // ================= UI =================
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
+    <div className="space-y-8">
 
-      {/* HEADER */}
-      <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-4xl font-bold text-gray-800">
+            Security Agency Dashboard
+          </h1>
 
-      {/* LOADING */}
-      {loading ? (
-        <div className="text-center py-10 text-gray-500">
-          Loading dashboard...
+          <p className="text-gray-500 mt-2">
+            Welcome back, Admin 👋
+          </p>
         </div>
-      ) : (
-        <>
-          {/* STATS */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
 
-            {stats.map((s, i) => (
-              <div
-                key={i}
-                className="bg-white p-4 rounded shadow hover:shadow-md transition"
-              >
-                <h3 className="text-gray-500 text-sm">{s.title}</h3>
-                <p className="text-2xl font-bold text-blue-600">
-                  {s.value}
-                </p>
-              </div>
-            ))}
+        <button
+          onClick={() => router.push("/dashboard/reports")}
+          className="bg-blue-600 hover:bg-blue-700 hover:scale-105 transition-all duration-300 text-white px-6 py-3 rounded-xl shadow-lg"
+        >
+          Generate Report
+        </button>
+      </div>
 
-          </div>
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+        {stats.map((item, index) => (
+          <div
+            key={index}
+            className="bg-white rounded-2xl shadow-md hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 p-6 border border-gray-100"
+          >
+            <div
+              className={`w-14 h-14 rounded-2xl ${item.color} mb-5`}
+            ></div>
 
-          {/* CHART */}
-          <div className="bg-white p-6 rounded shadow">
-
-            <h2 className="text-xl font-bold mb-4">
-              Attendance Overview
+            <h2 className="text-gray-500 text-sm">
+              {item.title}
             </h2>
 
-            <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={chartData}>
+            <p className="text-4xl font-bold text-gray-800 mt-2">
+              {item.value}
+            </p>
+          </div>
+        ))}
+      </div>
 
-                <XAxis dataKey="day" />
-                <YAxis />
-                <Tooltip />
+      {/* Main Area */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
-                <Line
-                  type="monotone"
-                  dataKey="attendance"
-                  strokeWidth={3}
-                />
+        {/* Activities */}
+        <div className="xl:col-span-2 bg-white rounded-2xl shadow-md p-6">
 
-              </LineChart>
-            </ResponsiveContainer>
+          <h2 className="text-3xl font-bold mb-8">
+            Recent Activities
+          </h2>
+
+          <div className="space-y-6">
+
+            <div className="flex justify-between border-b pb-4">
+              <div>
+                <h3 className="font-bold text-lg">
+                  Guard Assigned
+                </h3>
+
+                <p className="text-gray-500">
+                  Ali assigned to City Mall Duty
+                </p>
+              </div>
+
+              <span className="text-gray-400 text-sm">
+                2 min ago
+              </span>
+            </div>
+
+            <div className="flex justify-between border-b pb-4">
+              <div>
+                <h3 className="font-bold text-lg">
+                  New Client Added
+                </h3>
+
+                <p className="text-gray-500">
+                  ABC Company registered
+                </p>
+              </div>
+
+              <span className="text-gray-400 text-sm">
+                1 hour ago
+              </span>
+            </div>
+
+            <div className="flex justify-between">
+              <div>
+                <h3 className="font-bold text-lg">
+                  Payroll Generated
+                </h3>
+
+                <p className="text-gray-500">
+                  Monthly salaries processed
+                </p>
+              </div>
+
+              <span className="text-gray-400 text-sm">
+                Today
+              </span>
+            </div>
 
           </div>
-        </>
-      )}
+        </div>
 
+        {/* Quick Actions */}
+        <div className="bg-white rounded-2xl shadow-md p-6">
+
+          <h2 className="text-3xl font-bold mb-8">
+            Quick Actions
+          </h2>
+
+          <div className="space-y-5">
+
+            <button
+              onClick={() => router.push("/dashboard/guards")}
+              className="w-full bg-blue-600 hover:bg-blue-700 hover:scale-105 transition-all duration-300 text-white py-4 rounded-xl font-semibold shadow-lg"
+            >
+              Add Guard
+            </button>
+
+            <button
+              onClick={() => router.push("/dashboard/clients")}
+              className="w-full bg-green-600 hover:bg-green-700 hover:scale-105 transition-all duration-300 text-white py-4 rounded-xl font-semibold shadow-lg"
+            >
+              Add Client
+            </button>
+
+            <button
+              onClick={() => router.push("/dashboard/duties")}
+              className="w-full bg-purple-600 hover:bg-purple-700 hover:scale-105 transition-all duration-300 text-white py-4 rounded-xl font-semibold shadow-lg"
+            >
+              Create Duty
+            </button>
+
+            <button
+              onClick={() => router.push("/dashboard/payroll")}
+              className="w-full bg-orange-500 hover:bg-orange-600 hover:scale-105 transition-all duration-300 text-white py-4 rounded-xl font-semibold shadow-lg"
+            >
+              Generate Payroll
+            </button>
+
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }
