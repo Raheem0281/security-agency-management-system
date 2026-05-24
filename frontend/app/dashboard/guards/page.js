@@ -1,331 +1,398 @@
 "use client";
 
-import API from "../../../services/api";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus, Search, Pencil, Trash2, ShieldCheck, X } from "lucide-react";
+
+const emptyGuard = {
+  name: "",
+  fatherName: "",
+  cnic: "",
+  phone: "",
+  email: "",
+  password: "",
+  dutyLocation: "",
+  shift: "",
+  dutyTime: "",
+  licenseNumber: "",
+  weaponType: "",
+  joinDate: "",
+  status: "Active",
+};
 
 export default function GuardsPage() {
-  // ================= STATES =================
-  const [search, setSearch] = useState("");
   const [guards, setGuards] = useState([]);
-
-  const [showModal, setShowModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-
-  const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
-
+  const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
-
-  const [newGuard, setNewGuard] = useState({
-    name: "",
-    phone: "",
-    status: "Active",
-  });
-
+  const [showAddModal, setShowAddModal] = useState(false);
   const [editGuard, setEditGuard] = useState(null);
+  const [newGuard, setNewGuard] = useState(emptyGuard);
 
-  // ================= FETCH =================
   useEffect(() => {
-    fetchGuards();
+    setGuards(JSON.parse(localStorage.getItem("guards")) || []);
   }, []);
 
-  const fetchGuards = async () => {
-    setLoading(true);
-    try {
-      // const res = await API.get("/guards");
-      // setGuards(res.data.data);
-
-      setTimeout(() => {
-        setGuards([
-          { id: 1, name: "Ali Khan", phone: "03001234567", status: "Active" },
-          { id: 2, name: "Ahmed Raza", phone: "03111234567", status: "Inactive" },
-        ]);
-        setLoading(false);
-      }, 600);
-
-    } catch (error) {
-      setLoading(false);
-      console.log(error);
-    }
+  const saveGuards = (updatedGuards) => {
+    setGuards(updatedGuards);
+    localStorage.setItem("guards", JSON.stringify(updatedGuards));
+    window.dispatchEvent(new Event("guards-updated"));
   };
 
-  // ================= ADD =================
-  const handleAddGuard = async () => {
-    if (!newGuard.name || !newGuard.phone) {
-      setMessage("⚠ Please fill all fields");
+  const showMessage = (text) => {
+    setMessage(text);
+    setTimeout(() => setMessage(""), 2500);
+  };
+
+  const filteredGuards = useMemo(() => {
+    const value = search.toLowerCase();
+
+    return guards.filter(
+      (guard) =>
+        guard.name?.toLowerCase().includes(value) ||
+        guard.fatherName?.toLowerCase().includes(value) ||
+        guard.email?.toLowerCase().includes(value) ||
+        guard.cnic?.includes(search) ||
+        guard.licenseNumber?.toLowerCase().includes(value) ||
+        guard.weaponType?.toLowerCase().includes(value) ||
+        guard.dutyLocation?.toLowerCase().includes(value)
+    );
+  }, [guards, search]);
+
+  const validateGuard = (guard) => {
+    return (
+      guard.name &&
+      guard.fatherName &&
+      guard.email &&
+      guard.password &&
+      guard.cnic &&
+      guard.dutyLocation
+    );
+  };
+
+  const handleAddGuard = () => {
+    if (!validateGuard(newGuard)) {
+      showMessage("Please fill required fields");
       return;
     }
 
-    setActionLoading(true);
+    const guard = {
+      id: Date.now(),
+      ...newGuard,
+      joinDate:
+        newGuard.joinDate || new Date().toISOString().split("T")[0],
+      createdAt: new Date().toISOString(),
+    };
 
-    try {
-      // await API.post("/guards", newGuard);
-
-      setGuards([
-        ...guards,
-        { id: guards.length + 1, ...newGuard },
-      ]);
-
-      setShowModal(false);
-      setMessage("✅ Guard added successfully");
-
-      setNewGuard({ name: "", phone: "", status: "Active" });
-
-    } catch (error) {
-      setMessage("❌ Error adding guard");
-    }
-
-    setActionLoading(false);
+    saveGuards([guard, ...guards]);
+    setNewGuard(emptyGuard);
+    setShowAddModal(false);
+    showMessage("Guard added successfully ✅");
   };
 
-  // ================= DELETE =================
-  const handleDeleteGuard = async (id) => {
-    setActionLoading(true);
-
-    try {
-      // await API.delete(`/guards/${id}`);
-
-      setGuards(guards.filter((g) => g.id !== id));
-      setMessage("🗑 Guard deleted");
-
-    } catch (error) {
-      setMessage("❌ Delete failed");
-    }
-
-    setActionLoading(false);
-  };
-
-  // ================= EDIT =================
-  const handleEditGuard = async () => {
-    if (!editGuard.name || !editGuard.phone) {
-      setMessage("⚠ Fill all fields");
+  const handleUpdateGuard = () => {
+    if (!validateGuard(editGuard)) {
+      showMessage("Please fill required fields");
       return;
     }
 
-    setActionLoading(true);
+    const updated = guards.map((guard) =>
+      guard.id === editGuard.id ? editGuard : guard
+    );
 
-    try {
-      // await API.put(`/guards/${editGuard.id}`, editGuard);
-
-      setGuards(
-        guards.map((g) =>
-          g.id === editGuard.id ? editGuard : g
-        )
-      );
-
-      setShowEditModal(false);
-      setMessage("✏ Guard updated");
-
-    } catch (error) {
-      setMessage("❌ Update failed");
-    }
-
-    setActionLoading(false);
+    saveGuards(updated);
+    setEditGuard(null);
+    showMessage("Guard updated successfully ✅");
   };
 
-  // ================= FILTER =================
-  const filteredGuards = guards.filter((g) =>
-    g.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const handleDeleteGuard = (id) => {
+    if (!confirm("Are you sure you want to delete this guard?")) return;
 
-  // ================= UI =================
+    saveGuards(guards.filter((guard) => guard.id !== id));
+    showMessage("Guard deleted successfully");
+  };
+
   return (
-    <div className="p-4">
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-800">
+            Guards Management
+          </h1>
+          <p className="text-gray-500 mt-1">
+            Manage guards, login credentials, license number and weapon type
+          </p>
+        </div>
 
-      {/* MESSAGE */}
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-5 py-3 rounded-2xl flex items-center gap-2 shadow-lg"
+        >
+          <Plus size={20} />
+          Add Guard
+        </button>
+      </div>
+
       {message && (
-        <div className="mb-3 p-2 bg-gray-100 border rounded text-sm">
+        <div className="bg-blue-50 border border-blue-200 text-blue-700 rounded-2xl p-4 font-medium">
           {message}
         </div>
       )}
 
-      {/* HEADER */}
-      <div className="flex justify-between mb-4">
-        <h2 className="text-xl font-bold">Guards</h2>
+      <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
+        <div className="relative">
+          <Search size={18} className="absolute left-4 top-4 text-gray-400" />
 
-        <button
-          onClick={() => setShowModal(true)}
-          className="bg-blue-500 text-white px-4 py-2 rounded"
-        >
-          + Add Guard
-        </button>
+          <input
+            type="text"
+            placeholder="Search by name, father name, email, CNIC, license no, weapon type or duty point..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-[#F4F7FE] border border-gray-200 rounded-2xl py-3 pl-12 pr-4 outline-none focus:border-blue-500"
+          />
+        </div>
       </div>
 
-      {/* SEARCH */}
-      <input
-        className="border p-2 mb-4 w-full"
-        placeholder="Search guards..."
-        onChange={(e) => setSearch(e.target.value)}
-      />
-
-      {/* LOADING */}
-      {loading ? (
-        <p className="text-gray-500">Loading guards...</p>
-      ) : (
-
-        <table className="w-full bg-white shadow rounded">
-          <thead className="bg-gray-200">
-            <tr>
-              <th className="p-2">ID</th>
-              <th className="p-2">Name</th>
-              <th className="p-2">Phone</th>
-              <th className="p-2">Status</th>
-              <th className="p-2">Actions</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {filteredGuards.map((g) => (
-              <tr key={g.id} className="text-center border-t">
-                <td className="p-2">{g.id}</td>
-                <td className="p-2">{g.name}</td>
-                <td className="p-2">{g.phone}</td>
-
-                <td className="p-2">
-                  <span className={`px-2 py-1 rounded text-white ${
-                    g.status === "Active"
-                      ? "bg-green-500"
-                      : "bg-red-500"
-                  }`}>
-                    {g.status}
-                  </span>
-                </td>
-
-                <td className="p-2 flex justify-center gap-2">
-                  <button
-                    onClick={() => {
-                      setEditGuard(g);
-                      setShowEditModal(true);
-                    }}
-                    className="bg-yellow-500 text-white px-2 py-1 rounded"
-                  >
-                    Edit
-                  </button>
-
-                  <button
-                    disabled={actionLoading}
-                    onClick={() => handleDeleteGuard(g.id)}
-                    className="bg-red-500 text-white px-2 py-1 rounded"
-                  >
-                    Delete
-                  </button>
-                </td>
+      <div className="bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-100">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1400px]">
+            <thead className="bg-[#071739] text-white">
+              <tr>
+                <th className="p-4 text-left">Guard</th>
+                <th className="p-4 text-left">Father Name</th>
+                <th className="p-4 text-left">CNIC</th>
+                <th className="p-4 text-left">Phone</th>
+                <th className="p-4 text-left">Email</th>
+                <th className="p-4 text-left">Password</th>
+                <th className="p-4 text-left">Duty Point</th>
+                <th className="p-4 text-left">License Number</th>
+                <th className="p-4 text-left">Weapon Type</th>
+                <th className="p-4 text-left">Join Date</th>
+                <th className="p-4 text-left">Status</th>
+                <th className="p-4 text-center">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+
+            <tbody>
+              {filteredGuards.length === 0 ? (
+                <tr>
+                  <td colSpan="12" className="text-center py-10 text-gray-500">
+                    No guards found
+                  </td>
+                </tr>
+              ) : (
+                filteredGuards.map((guard) => (
+                  <tr
+                    key={guard.id}
+                    className="border-b border-gray-100 hover:bg-gray-50"
+                  >
+                    <td className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white flex items-center justify-center">
+                          <ShieldCheck size={21} />
+                        </div>
+
+                        <div>
+                          <h3 className="font-semibold text-gray-800">
+                            {guard.name}
+                          </h3>
+                          <p className="text-sm text-gray-500">
+                            ID #{guard.id}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="p-4 text-gray-700">{guard.fatherName}</td>
+                    <td className="p-4 text-gray-700">{guard.cnic}</td>
+                    <td className="p-4 text-gray-700">{guard.phone}</td>
+                    <td className="p-4 text-gray-700">{guard.email}</td>
+                    <td className="p-4 text-gray-700">{guard.password}</td>
+                    <td className="p-4 text-gray-700">{guard.dutyLocation}</td>
+                    <td className="p-4 text-gray-700">
+                      {guard.licenseNumber || "N/A"}
+                    </td>
+                    <td className="p-4 text-gray-700">
+                      {guard.weaponType || "N/A"}
+                    </td>
+                    <td className="p-4 text-gray-700">
+                      {guard.joinDate || "N/A"}
+                    </td>
+
+                    <td className="p-4">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          guard.status === "Active"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        {guard.status}
+                      </span>
+                    </td>
+
+                    <td className="p-4">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => setEditGuard(guard)}
+                          className="w-10 h-10 rounded-xl bg-yellow-100 hover:bg-yellow-200 flex items-center justify-center"
+                        >
+                          <Pencil size={18} className="text-yellow-700" />
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteGuard(guard.id)}
+                          className="w-10 h-10 rounded-xl bg-red-100 hover:bg-red-200 flex items-center justify-center"
+                        >
+                          <Trash2 size={18} className="text-red-700" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showAddModal && (
+        <GuardFormModal
+          title="Add New Guard"
+          guard={newGuard}
+          setGuard={setNewGuard}
+          onClose={() => setShowAddModal(false)}
+          onSubmit={handleAddGuard}
+          submitText="Add Guard"
+        />
       )}
 
-      {/* ================= ADD MODAL ================= */}
-      {showModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white p-6 rounded w-96">
+      {editGuard && (
+        <GuardFormModal
+          title="Edit Guard"
+          guard={editGuard}
+          setGuard={setEditGuard}
+          onClose={() => setEditGuard(null)}
+          onSubmit={handleUpdateGuard}
+          submitText="Save Changes"
+        />
+      )}
+    </div>
+  );
+}
 
-            <h2 className="text-xl font-bold mb-4">Add Guard</h2>
+function GuardFormModal({ title, guard, setGuard, onClose, onSubmit, submitText }) {
+  const updateField = (field, value) => {
+    setGuard({ ...guard, [field]: value });
+  };
 
-            <input
-              className="border p-2 w-full mb-3"
-              placeholder="Name"
-              value={newGuard.name}
-              onChange={(e) =>
-                setNewGuard({ ...newGuard, name: e.target.value })
-              }
-            />
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden">
+        <div className="bg-[#071739] text-white p-5 flex items-center justify-between">
+          <h2 className="text-xl font-bold">{title}</h2>
+          <button onClick={onClose}>
+            <X size={24} />
+          </button>
+        </div>
 
-            <input
-              className="border p-2 w-full mb-3"
-              placeholder="Phone"
-              value={newGuard.phone}
-              onChange={(e) =>
-                setNewGuard({ ...newGuard, phone: e.target.value })
-              }
-            />
+        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto">
+          <Input label="Guard Name" value={guard.name} onChange={(e) => updateField("name", e.target.value)} />
+          <Input label="Father Name" value={guard.fatherName} onChange={(e) => updateField("fatherName", e.target.value)} />
+          <Input label="CNIC" value={guard.cnic} onChange={(e) => updateField("cnic", e.target.value)} />
+          <Input label="Phone" value={guard.phone} onChange={(e) => updateField("phone", e.target.value)} />
+          <Input label="Login Email" type="email" value={guard.email} onChange={(e) => updateField("email", e.target.value)} />
+          <Input label="Login Password" value={guard.password} onChange={(e) => updateField("password", e.target.value)} />
+          <Input label="Duty Point" value={guard.dutyLocation} onChange={(e) => updateField("dutyLocation", e.target.value)} />
+          <Input label="Shift" value={guard.shift} placeholder="Day Shift / Night Shift" onChange={(e) => updateField("shift", e.target.value)} />
+          <Input label="Duty Time" value={guard.dutyTime} placeholder="8:00 PM - 6:00 AM" onChange={(e) => updateField("dutyTime", e.target.value)} />
+          <Input label="License Number" value={guard.licenseNumber} onChange={(e) => updateField("licenseNumber", e.target.value)} />
+          
+          <WeaponTypeSelect
+            value={guard.weaponType}
+            onChange={(value) => updateField("weaponType", value)}
+          />
 
+          <Input label="Join Date" type="date" value={guard.joinDate} onChange={(e) => updateField("joinDate", e.target.value)} />
+
+          <div>
+            <label className="text-sm font-semibold text-gray-600">Status</label>
             <select
-              className="border p-2 w-full mb-3"
-              value={newGuard.status}
-              onChange={(e) =>
-                setNewGuard({ ...newGuard, status: e.target.value })
-              }
+              value={guard.status}
+              onChange={(e) => updateField("status", e.target.value)}
+              className="mt-2 w-full bg-[#F4F7FE] border border-gray-200 rounded-2xl px-4 py-3 outline-none"
             >
               <option>Active</option>
               <option>Inactive</option>
+              <option>Leave</option>
             </select>
-
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowModal(false)}
-                className="bg-gray-400 text-white px-3 py-1 rounded"
-              >
-                Cancel
-              </button>
-
-              <button
-                disabled={actionLoading}
-                onClick={handleAddGuard}
-                className="bg-blue-500 text-white px-3 py-1 rounded"
-              >
-                {actionLoading ? "Saving..." : "Add"}
-              </button>
-            </div>
           </div>
         </div>
-      )}
 
-      {/* ================= EDIT MODAL ================= */}
-      {showEditModal && editGuard && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white p-6 rounded w-96">
+        <div className="p-6 pt-0 flex justify-end gap-3">
+          <button onClick={onClose} className="px-5 py-3 rounded-2xl bg-gray-200 hover:bg-gray-300">
+            Cancel
+          </button>
 
-            <h2 className="text-xl font-bold mb-4">Edit Guard</h2>
-
-            <input
-              className="border p-2 w-full mb-3"
-              value={editGuard.name}
-              onChange={(e) =>
-                setEditGuard({ ...editGuard, name: e.target.value })
-              }
-            />
-
-            <input
-              className="border p-2 w-full mb-3"
-              value={editGuard.phone}
-              onChange={(e) =>
-                setEditGuard({ ...editGuard, phone: e.target.value })
-              }
-            />
-
-            <select
-              className="border p-2 w-full mb-3"
-              value={editGuard.status}
-              onChange={(e) =>
-                setEditGuard({ ...editGuard, status: e.target.value })
-              }
-            >
-              <option>Active</option>
-              <option>Inactive</option>
-            </select>
-
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowEditModal(false)}
-                className="bg-gray-400 text-white px-3 py-1 rounded"
-              >
-                Cancel
-              </button>
-
-              <button
-                disabled={actionLoading}
-                onClick={handleEditGuard}
-                className="bg-blue-500 text-white px-3 py-1 rounded"
-              >
-                {actionLoading ? "Saving..." : "Save"}
-              </button>
-            </div>
-          </div>
+          <button onClick={onSubmit} className="px-5 py-3 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white">
+            {submitText}
+          </button>
         </div>
-      )}
+      </div>
+    </div>
+  );
+}
 
+function WeaponTypeSelect({ value, onChange }) {
+  return (
+    <div>
+      <label className="text-sm font-semibold text-gray-600">
+        Weapon Type
+      </label>
+
+      <select
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-2 w-full bg-[#F4F7FE] border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-blue-500"
+      >
+        <option value="">Select Weapon Type</option>
+
+        <optgroup label="Pistols">
+          <option value="9MM Pistol">9MM Pistol</option>
+          <option value="30 Bore Pistol">30 Bore Pistol</option>
+          <option value="44 Bore Pistol">44 Bore Pistol</option>
+          <option value="MP5">MP5</option>
+        </optgroup>
+
+        <optgroup label="Shotguns">
+          <option value="12 Bore Shotgun">12 Bore Shotgun</option>
+          <option value="Pump Action Shotgun">Pump Action Shotgun</option>
+        </optgroup>
+
+        <optgroup label="Rifles">
+          <option value="7MM Rifle">7MM Rifle</option>
+          <option value="8MM Rifle">8MM Rifle</option>
+          <option value="222 Bore Rifle">222 Bore Rifle</option>
+          <option value="223 Bore Rifle">223 Bore Rifle</option>
+          <option value="44 Bore Rifle">44 Bore Rifle</option>
+          <option value="SMG">SMG</option>
+          <option value="AK-47">AK-47</option>
+          <option value="G3 Rifle">G3 Rifle</option>
+        </optgroup>
+      </select>
+    </div>
+  );
+}
+
+function Input({ label, value, onChange, type = "text", placeholder = "" }) {
+  return (
+    <div>
+      <label className="text-sm font-semibold text-gray-600">{label}</label>
+      <input
+        type={type}
+        value={value || ""}
+        placeholder={placeholder || label}
+        onChange={onChange}
+        className="mt-2 w-full bg-[#F4F7FE] border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-blue-500"
+      />
     </div>
   );
 }

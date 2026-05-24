@@ -1,181 +1,208 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  ShieldCheck,
+  Users,
+  ClipboardList,
+  Wallet,
+  FileText,
+} from "lucide-react";
 
 export default function DashboardPage() {
   const router = useRouter();
 
+  const [guards, setGuards] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+  const [payroll, setPayroll] = useState([]);
+  const [activities, setActivities] = useState([]);
+
+  const loadDashboardData = () => {
+    setGuards(JSON.parse(localStorage.getItem("guards")) || []);
+    setClients(JSON.parse(localStorage.getItem("clients")) || []);
+    setAttendance(JSON.parse(localStorage.getItem("attendanceRecords")) || []);
+    setPayroll(JSON.parse(localStorage.getItem("payrollRecords")) || []);
+    setActivities(JSON.parse(localStorage.getItem("recentActivities")) || []);
+  };
+
+  useEffect(() => {
+    loadDashboardData();
+
+    window.addEventListener("storage", loadDashboardData);
+    window.addEventListener("attendance-updated", loadDashboardData);
+    window.addEventListener("activities-updated", loadDashboardData);
+    window.addEventListener("payroll-updated", loadDashboardData);
+    window.addEventListener("clients-updated", loadDashboardData);
+    window.addEventListener("guards-updated", loadDashboardData);
+
+    return () => {
+      window.removeEventListener("storage", loadDashboardData);
+      window.removeEventListener("attendance-updated", loadDashboardData);
+      window.removeEventListener("activities-updated", loadDashboardData);
+      window.removeEventListener("payroll-updated", loadDashboardData);
+      window.removeEventListener("clients-updated", loadDashboardData);
+      window.removeEventListener("guards-updated", loadDashboardData);
+    };
+  }, []);
+
+  const totalPayroll = useMemo(() => {
+    return payroll.reduce((sum, item) => {
+      return sum + Number(item.finalSalary || 0);
+    }, 0);
+  }, [payroll]);
+
+  const today = new Date().toISOString().split("T")[0];
+
+  const todayAttendance = attendance.filter(
+    (item) => item.date === today && item.status === "Present"
+  );
+
   const stats = [
     {
       title: "Total Guards",
-      value: "45",
-      color: "bg-blue-500",
+      value: guards.length,
+      icon: ShieldCheck,
+      path: "/dashboard/guards",
     },
     {
-      title: "Active Duties",
-      value: "18",
-      color: "bg-green-500",
+      title: "Total Clients",
+      value: clients.length,
+      icon: Users,
+      path: "/dashboard/clients",
     },
     {
-      title: "Clients",
-      value: "12",
-      color: "bg-purple-500",
+      title: "Today Present",
+      value: todayAttendance.length,
+      icon: ClipboardList,
+      path: "/dashboard/attendance",
     },
     {
-      title: "Monthly Revenue",
-      value: "$978K",
-      color: "bg-orange-500",
+      title: "Payroll Amount",
+      value: `Rs. ${totalPayroll.toLocaleString()}`,
+      icon: Wallet,
+      path: "/dashboard/payroll",
     },
+  ];
+
+  const quickActions = [
+    { title: "Add Guard", path: "/dashboard/guards" },
+    { title: "Add Client", path: "/dashboard/clients" },
+    { title: "View Attendance", path: "/dashboard/attendance" },
+    { title: "Generate Report", path: "/dashboard/reports" },
   ];
 
   return (
     <div className="space-y-8">
-
-      {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-4xl font-bold text-gray-800">
             Security Agency Dashboard
           </h1>
 
           <p className="text-gray-500 mt-2">
-            Welcome back, Admin 👋
+            Live overview connected with guards, clients, attendance and payroll
           </p>
         </div>
 
         <button
           onClick={() => router.push("/dashboard/reports")}
-          className="bg-blue-600 hover:bg-blue-700 hover:scale-105 transition-all duration-300 text-white px-6 py-3 rounded-xl shadow-lg"
+          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-2xl shadow-lg flex items-center gap-2 transition"
         >
+          <FileText size={20} />
           Generate Report
         </button>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        {stats.map((item, index) => (
-          <div
-            key={index}
-            className="bg-white rounded-2xl shadow-md hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 p-6 border border-gray-100"
-          >
-            <div
-              className={`w-14 h-14 rounded-2xl ${item.color} mb-5`}
-            ></div>
+        {stats.map((item) => {
+          const Icon = item.icon;
 
-            <h2 className="text-gray-500 text-sm">
-              {item.title}
-            </h2>
+          return (
+            <button
+              key={item.title}
+              onClick={() => router.push(item.path)}
+              className="text-left bg-white rounded-3xl p-6 shadow-sm border border-gray-100 hover:shadow-lg hover:-translate-y-1 transition"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center mb-5">
+                <Icon className="text-blue-600" size={28} />
+              </div>
 
-            <p className="text-4xl font-bold text-gray-800 mt-2">
-              {item.value}
-            </p>
-          </div>
-        ))}
+              <p className="text-gray-500">{item.title}</p>
+
+              <h2 className="text-4xl font-bold text-gray-800 mt-2">
+                {item.value}
+              </h2>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Main Area */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-gray-800">
+              Recent History
+            </h2>
 
-        {/* Activities */}
-        <div className="xl:col-span-2 bg-white rounded-2xl shadow-md p-6">
-
-          <h2 className="text-3xl font-bold mb-8">
-            Recent Activities
-          </h2>
-
-          <div className="space-y-6">
-
-            <div className="flex justify-between border-b pb-4">
-              <div>
-                <h3 className="font-bold text-lg">
-                  Guard Assigned
-                </h3>
-
-                <p className="text-gray-500">
-                  Ali assigned to City Mall Duty
-                </p>
-              </div>
-
-              <span className="text-gray-400 text-sm">
-                2 min ago
-              </span>
-            </div>
-
-            <div className="flex justify-between border-b pb-4">
-              <div>
-                <h3 className="font-bold text-lg">
-                  New Client Added
-                </h3>
-
-                <p className="text-gray-500">
-                  ABC Company registered
-                </p>
-              </div>
-
-              <span className="text-gray-400 text-sm">
-                1 hour ago
-              </span>
-            </div>
-
-            <div className="flex justify-between">
-              <div>
-                <h3 className="font-bold text-lg">
-                  Payroll Generated
-                </h3>
-
-                <p className="text-gray-500">
-                  Monthly salaries processed
-                </p>
-              </div>
-
-              <span className="text-gray-400 text-sm">
-                Today
-              </span>
-            </div>
-
+            <button
+              onClick={() => router.push("/dashboard/reports")}
+              className="text-blue-600 font-semibold"
+            >
+              View All
+            </button>
           </div>
+
+          {activities.length === 0 ? (
+            <div className="text-gray-500 bg-gray-50 rounded-2xl p-5">
+              No recent activity yet.
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[420px] overflow-hidden">
+              {activities.slice(0, 3).map((activity) => (
+                <div
+                  key={activity.id}
+                  className="flex items-center justify-between border-b border-gray-200 pb-4"
+                >
+                  <div>
+                    <h3 className="font-bold text-lg text-gray-800">
+                      {activity.title}
+                    </h3>
+
+                    <p className="text-gray-500">{activity.message}</p>
+
+                    <p className="text-xs text-gray-400 mt-1">
+                      {activity.date}
+                    </p>
+                  </div>
+
+                  <span className="text-gray-400 text-sm">
+                    {activity.time}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Quick Actions */}
-        <div className="bg-white rounded-2xl shadow-md p-6">
-
-          <h2 className="text-3xl font-bold mb-8">
+        <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+          <h2 className="text-2xl font-bold text-gray-800 mb-6">
             Quick Actions
           </h2>
 
           <div className="space-y-5">
-
-            <button
-              onClick={() => router.push("/dashboard/guards")}
-              className="w-full bg-blue-600 hover:bg-blue-700 hover:scale-105 transition-all duration-300 text-white py-4 rounded-xl font-semibold shadow-lg"
-            >
-              Add Guard
-            </button>
-
-            <button
-              onClick={() => router.push("/dashboard/clients")}
-              className="w-full bg-green-600 hover:bg-green-700 hover:scale-105 transition-all duration-300 text-white py-4 rounded-xl font-semibold shadow-lg"
-            >
-              Add Client
-            </button>
-
-            <button
-              onClick={() => router.push("/dashboard/duties")}
-              className="w-full bg-purple-600 hover:bg-purple-700 hover:scale-105 transition-all duration-300 text-white py-4 rounded-xl font-semibold shadow-lg"
-            >
-              Create Duty
-            </button>
-
-            <button
-              onClick={() => router.push("/dashboard/payroll")}
-              className="w-full bg-orange-500 hover:bg-orange-600 hover:scale-105 transition-all duration-300 text-white py-4 rounded-xl font-semibold shadow-lg"
-            >
-              Generate Payroll
-            </button>
-
+            {quickActions.map((action) => (
+              <button
+                key={action.title}
+                onClick={() => router.push(action.path)}
+                className="w-full bg-gray-100 hover:bg-blue-600 hover:text-white text-gray-800 py-4 rounded-2xl font-bold transition"
+              >
+                {action.title}
+              </button>
+            ))}
           </div>
         </div>
-
       </div>
     </div>
   );
