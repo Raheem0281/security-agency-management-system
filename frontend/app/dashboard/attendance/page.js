@@ -4,163 +4,154 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Search,
   RefreshCcw,
-  Download,
+  Eye,
   CalendarCheck,
   CheckCircle2,
   XCircle,
-  Pencil,
-  Trash2,
+  AlertTriangle,
   X,
 } from "lucide-react";
 
 export default function AttendancePage() {
   const [guards, setGuards] = useState([]);
-  const [records, setRecords] = useState([]);
+  const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [search, setSearch] = useState("");
-  const [selectedMonth, setSelectedMonth] = useState(
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [selectedGuard, setSelectedGuard] = useState(null);
+  const [historyMonth, setHistoryMonth] = useState(
     new Date().toISOString().slice(0, 7)
   );
-  const [message, setMessage] = useState("");
-  const [editGuard, setEditGuard] = useState(null);
+  const [historyDate, setHistoryDate] = useState("");
 
-  const todayDate = new Date().toISOString().split("T")[0];
+  const today = new Date().toISOString().split("T")[0];
+
+  const loadData = () => {
+    try {
+      setLoading(true);
+      setGuards(JSON.parse(localStorage.getItem("guards")) || []);
+      setAttendanceRecords(
+        JSON.parse(localStorage.getItem("attendanceRecords")) || []
+      );
+    } catch {
+      setMessage("Failed to load attendance data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+    window.addEventListener("attendance-updated", loadData);
+    window.addEventListener("guards-updated", loadData);
+    window.addEventListener("storage", loadData);
+
+    return () => {
+      window.removeEventListener("attendance-updated", loadData);
+      window.removeEventListener("guards-updated", loadData);
+      window.removeEventListener("storage", loadData);
+    };
+  }, []);
 
   const showMessage = (text) => {
     setMessage(text);
     setTimeout(() => setMessage(""), 2500);
   };
 
-  const loadData = () => {
-    setGuards(JSON.parse(localStorage.getItem("guards")) || []);
-    setRecords(JSON.parse(localStorage.getItem("attendanceRecords")) || []);
-  };
+  const getGuardById = (guardId) =>
+    guards.find((guard) => String(guard.id) === String(guardId));
 
-  useEffect(() => {
-    loadData();
+  const getWeaponType = (record, guard) =>
+    record?.weaponType || guard?.weaponType || "N/A";
 
-    window.addEventListener("attendance-updated", loadData);
-    window.addEventListener("guards-updated", loadData);
+  const getLicenseNumber = (record, guard) =>
+    record?.licenseNumber ||
+    guard?.licenseNumber ||
+    record?.weaponNumber ||
+    guard?.weaponNumber ||
+    "N/A";
 
-    return () => {
-      window.removeEventListener("attendance-updated", loadData);
-      window.removeEventListener("guards-updated", loadData);
-    };
-  }, []);
+  const getDutyPoint = (record, guard) =>
+    record?.dutyPoint ||
+    record?.dutyLocation ||
+    guard?.dutyLocation ||
+    "N/A";
 
-  const monthDates = useMemo(() => {
-    const [year, month] = selectedMonth.split("-").map(Number);
+  const todayAttendance = useMemo(() => {
+    return attendanceRecords.filter((record) => record.date === today);
+  }, [attendanceRecords, today]);
 
-    const totalDays = new Date(year, month, 0).getDate();
-
-    return Array.from({ length: totalDays }, (_, index) => {
-      const day = String(index + 1).padStart(2, "0");
-      return `${selectedMonth}-${day}`;
-    });
-  }, [selectedMonth]);
-
-  const getLicenseNumber = (guard) =>
-    guard.licenseNumber || "N/A";
-
-  const getWeaponType = (guard) =>
-    guard.weaponType || "N/A";
-
-  const getJoinDate = (guard) => {
-    if (guard.joinDate) return guard.joinDate;
-
-    if (guard.createdAt) {
-      return guard.createdAt.split("T")[0];
-    }
-
-    return `${selectedMonth}-01`;
-  };
-
-  const getStatus = (guard, date) => {
-    const joinDate = getJoinDate(guard);
-
-    if (date < joinDate) return "NotJoined";
-
-    if (date > todayDate) return "Future";
-
-    const record = records.find(
-      (item) =>
-        String(item.guardId) === String(guard.id) &&
-        item.date === date
-    );
-
-    return record?.status || "Absent";
-  };
-
-  const filteredGuards = useMemo(() => {
+  const searchedGuards = useMemo(() => {
     const value = search.toLowerCase();
+    if (!search.trim()) return [];
 
     return guards.filter(
       (guard) =>
         guard.name?.toLowerCase().includes(value) ||
         guard.fatherName?.toLowerCase().includes(value) ||
-        guard.licenseNumber?.toLowerCase().includes(value) ||
+        guard.cnic?.includes(search) ||
+        guard.dutyLocation?.toLowerCase().includes(value) ||
         guard.weaponType?.toLowerCase().includes(value) ||
-        guard.dutyLocation?.toLowerCase().includes(value)
+        guard.licenseNumber?.toLowerCase().includes(value) ||
+        guard.weaponNumber?.toLowerCase().includes(value)
     );
   }, [guards, search]);
 
-  const presentCount = useMemo(() => {
-    return filteredGuards.reduce((total, guard) => {
-      return (
-        total +
-        monthDates.filter(
-          (date) => getStatus(guard, date) === "Present"
-        ).length
-      );
-    }, 0);
-  }, [filteredGuards, monthDates, records]);
+  const presentToday = todayAttendance.filter(
+    (record) => record.status === "Present"
+  ).length;
 
-  const absentCount = useMemo(() => {
-    return filteredGuards.reduce((total, guard) => {
-      return (
-        total +
-        monthDates.filter(
-          (date) => getStatus(guard, date) === "Absent"
-        ).length
-      );
-    }, 0);
-  }, [filteredGuards, monthDates, records]);
+  const lateToday = todayAttendance.filter(
+    (record) => record.status === "Late"
+  ).length;
 
-  const saveRecords = (updatedRecords) => {
-    setRecords(updatedRecords);
+  const absentToday = Math.max(guards.length - todayAttendance.length, 0);
 
-    localStorage.setItem(
-      "attendanceRecords",
-      JSON.stringify(updatedRecords)
-    );
+  const getGuardHistory = (guardId) => {
+    return attendanceRecords
+      .filter((record) => {
+        const sameGuard = String(record.guardId) === String(guardId);
+        const sameMonth = record.date?.startsWith(historyMonth);
+        const sameDate = historyDate ? record.date === historyDate : true;
+        return sameGuard && sameMonth && sameDate;
+      })
+      .sort((a, b) => b.date.localeCompare(a.date));
+  };
 
+  const saveAttendance = (updatedRecords) => {
+    localStorage.setItem("attendanceRecords", JSON.stringify(updatedRecords));
+    setAttendanceRecords(updatedRecords);
     window.dispatchEvent(new Event("attendance-updated"));
   };
 
-  const saveGuards = (updatedGuards) => {
-    setGuards(updatedGuards);
+  const handleStatusUpdate = (guard, record, newStatus, selectedDate = today) => {
+    if (!guard?.id && !record?.guardId) {
+      showMessage("Guard not found");
+      return;
+    }
 
-    localStorage.setItem("guards", JSON.stringify(updatedGuards));
+    const guardId = guard?.id || record.guardId;
 
-    window.dispatchEvent(new Event("guards-updated"));
-  };
-
-  const handleStatusChange = (guard, date, status) => {
-    const existingRecord = records.find(
+    const existingRecord = attendanceRecords.find(
       (item) =>
-        String(item.guardId) === String(guard.id) &&
-        item.date === date
+        String(item.guardId) === String(guardId) && item.date === selectedDate
     );
 
     let updatedRecords;
 
     if (existingRecord) {
-      updatedRecords = records.map((item) =>
+      updatedRecords = attendanceRecords.map((item) =>
         item.id === existingRecord.id
           ? {
               ...item,
-              status,
+              status: newStatus,
               markedBy: "Admin",
-              updatedAt: new Date().toISOString(),
+              time:
+                item.time ||
+                new Date().toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
             }
           : item
       );
@@ -170,494 +161,393 @@ export default function AttendancePage() {
         guardId: guard.id,
         guardName: guard.name,
         fatherName: guard.fatherName,
-        licenseNumber: guard.licenseNumber,
+        cnic: guard.cnic,
+        dutyPoint: guard.dutyLocation,
         weaponType: guard.weaponType,
-        dutyLocation: guard.dutyLocation,
-        date,
-        status,
+        licenseNumber: guard.licenseNumber || guard.weaponNumber,
+        status: newStatus,
+        date: selectedDate,
+        time: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
         markedBy: "Admin",
-        createdAt: new Date().toISOString(),
       };
 
-      updatedRecords = [newRecord, ...records];
+      updatedRecords = [newRecord, ...attendanceRecords];
     }
 
-    saveRecords(updatedRecords);
-
-    showMessage("Attendance updated successfully ✅");
+    saveAttendance(updatedRecords);
+    showMessage(`Attendance marked ${newStatus} ✅`);
   };
 
-  const handleDeleteGuard = (guardId) => {
-    const confirmDelete = confirm(
-      "Delete this guard and related attendance?"
-    );
-
-    if (!confirmDelete) return;
-
-    const updatedGuards = guards.filter(
-      (guard) => String(guard.id) !== String(guardId)
-    );
-
-    const updatedRecords = records.filter(
-      (record) => String(record.guardId) !== String(guardId)
-    );
-
-    saveGuards(updatedGuards);
-    saveRecords(updatedRecords);
-
-    showMessage("Guard deleted successfully");
+  const handleRefresh = () => {
+    loadData();
+    showMessage("Attendance refreshed successfully ✅");
   };
 
-  const handleUpdateGuard = () => {
-    if (
-      !editGuard.name ||
-      !editGuard.fatherName ||
-      !editGuard.dutyLocation
-    ) {
-      showMessage("Please fill required fields");
-      return;
-    }
-
-    const updatedGuards = guards.map((guard) =>
-      String(guard.id) === String(editGuard.id)
-        ? editGuard
-        : guard
-    );
-
-    const updatedRecords = records.map((record) =>
-      String(record.guardId) === String(editGuard.id)
-        ? {
-            ...record,
-            guardName: editGuard.name,
-            fatherName: editGuard.fatherName,
-            licenseNumber: editGuard.licenseNumber,
-            weaponType: editGuard.weaponType,
-            dutyLocation: editGuard.dutyLocation,
-          }
-        : record
-    );
-
-    saveGuards(updatedGuards);
-    saveRecords(updatedRecords);
-
-    setEditGuard(null);
-
-    showMessage("Guard updated successfully ✅");
-  };
-
-  const handleExport = () => {
-    const header = [
-      "S.No",
-      "Guard Name",
-      "Father Name",
-      "License Number",
-      "Weapon Type",
-      "Duty Point",
-      "Join Date",
-      ...monthDates,
-    ].join(",");
-
-    const rows = filteredGuards.map((guard, index) => {
-      const statuses = monthDates.map((date) => {
-        const status = getStatus(guard, date);
-
-        if (status === "Present") return "P";
-
-        if (status === "Absent") return "A";
-
-        return "-";
-      });
-
-      return [
-        index + 1,
-        guard.name,
-        guard.fatherName || "N/A",
-        getLicenseNumber(guard),
-        getWeaponType(guard),
-        guard.dutyLocation || "N/A",
-        getJoinDate(guard),
-        ...statuses,
-      ]
-        .map((value) => `"${value}"`)
-        .join(",");
+  const openGuardHistory = (guard, record = {}) => {
+    setSelectedGuard({
+      guardId: guard?.id || record.guardId,
+      guardName: record.guardName || guard?.name,
+      fatherName: record.fatherName || guard?.fatherName,
+      dutyPoint: getDutyPoint(record, guard),
+      weaponType: getWeaponType(record, guard),
+      licenseNumber: getLicenseNumber(record, guard),
+      guardData: guard,
     });
-
-    const blob = new Blob(
-      [header + "\n" + rows.join("\n")],
-      {
-        type: "text/csv",
-      }
-    );
-
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = `attendance-${selectedMonth}.csv`;
-
-    link.click();
-
-    URL.revokeObjectURL(url);
-
-    showMessage("Attendance exported successfully ✅");
   };
 
   return (
     <div className="space-y-6">
-      {/* HEADER */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">
             Attendance Management
           </h1>
-
           <p className="text-gray-500 mt-1">
-            Monthly guard attendance with license and weapon details
+            Today attendance only. Previous records stay saved in history.
           </p>
         </div>
 
-        <div className="flex gap-3 flex-wrap">
-          <button
-            onClick={loadData}
-            className="bg-white border border-gray-200 px-5 py-3 rounded-2xl flex items-center gap-2 hover:bg-gray-50"
-          >
-            <RefreshCcw size={18} />
-            Refresh
-          </button>
-
-          <button
-            onClick={handleExport}
-            className="bg-[#071739] text-white px-5 py-3 rounded-2xl flex items-center gap-2"
-          >
-            <Download size={18} />
-            Export
-          </button>
-        </div>
+        <button
+          onClick={handleRefresh}
+          className="bg-white border border-gray-200 px-5 py-3 rounded-2xl flex items-center gap-2 hover:bg-gray-50 transition"
+        >
+          <RefreshCcw size={18} />
+          Refresh
+        </button>
       </div>
 
       {message && (
-        <div className="bg-blue-50 border border-blue-200 text-blue-700 rounded-2xl p-4 font-medium">
+        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-5 py-4 rounded-2xl font-medium">
           {message}
         </div>
       )}
 
-      {/* STATS */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-        <StatCard title="Total Guards" value={filteredGuards.length} />
-        <StatCard title="Present Entries" value={presentCount} />
-        <StatCard title="Absent Entries" value={absentCount} />
-        <StatCard title="Month" value={selectedMonth} />
+        <StatCard title="Total Guards" value={guards.length} icon={CalendarCheck} color="text-blue-600" bg="bg-blue-100" />
+        <StatCard title="Present Today" value={presentToday} icon={CheckCircle2} color="text-green-600" bg="bg-green-100" />
+        <StatCard title="Absent Today" value={absentToday} icon={XCircle} color="text-red-600" bg="bg-red-100" />
+        <StatCard title="Late Today" value={lateToday} icon={AlertTriangle} color="text-yellow-600" bg="bg-yellow-100" />
       </div>
 
-      {/* FILTER */}
       <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="relative">
-            <Search
-              size={18}
-              className="absolute left-4 top-4 text-gray-400"
-            />
-
-            <input
-              type="text"
-              placeholder="Search by name, father name, license no, weapon type or duty point..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-[#F4F7FE] border border-gray-200 rounded-2xl py-3 pl-12 pr-4 outline-none"
-            />
-          </div>
-
+        <div className="relative">
+          <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
           <input
-            type="month"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="bg-[#F4F7FE] border border-gray-200 rounded-2xl px-4 py-3 outline-none"
+            type="text"
+            placeholder="Search all guards by name, CNIC, weapon name, license number or duty point..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-blue-500"
           />
         </div>
       </div>
 
-      {/* TABLE */}
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1800px]">
-            <thead className="bg-[#071739] text-white">
-              <tr>
-                <th className="p-4 text-left">S.No</th>
-                <th className="p-4 text-left">Guard Name</th>
-                <th className="p-4 text-left">Father Name</th>
-                <th className="p-4 text-left">License Number</th>
-                <th className="p-4 text-left">Weapon Type</th>
-                <th className="p-4 text-left">Duty Point</th>
-                <th className="p-4 text-left">Join Date</th>
-                <th className="p-4 text-center">Actions</th>
+        <div className="px-6 py-5 border-b border-gray-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">
+              {search.trim()
+                ? "Search Guards & Attendance History"
+                : "Today Attendance"}
+            </h2>
+            <p className="text-gray-500 text-sm mt-1">
+              {search.trim()
+                ? "Search all guards and open complete attendance history"
+                : `Date: ${today}`}
+            </p>
+          </div>
 
-                {monthDates.map((date) => (
-                  <th
-                    key={date}
-                    className="p-4 text-center"
-                  >
-                    {date.split("-")[2]}
-                  </th>
-                ))}
+          <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-2xl text-sm font-semibold">
+            New day starts empty automatically
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1250px]">
+            <thead className="bg-gradient-to-r from-[#071739] to-[#0A1F4D] text-white">
+              <tr>
+                <th className="text-left px-6 py-4 whitespace-nowrap">Guard Name</th>
+                <th className="text-left px-6 py-4 whitespace-nowrap">Father Name</th>
+                <th className="text-left px-6 py-4 whitespace-nowrap">Duty Point</th>
+                <th className="text-left px-6 py-4 whitespace-nowrap">Weapon Type</th>
+                <th className="text-left px-6 py-4 whitespace-nowrap">License Number</th>
+                <th className="text-left px-6 py-4 whitespace-nowrap">Status</th>
+                <th className="text-left px-6 py-4 whitespace-nowrap">Time</th>
+                <th className="text-center px-6 py-4 whitespace-nowrap">Action</th>
               </tr>
             </thead>
 
             <tbody>
-              {filteredGuards.length === 0 ? (
+              {loading ? (
                 <tr>
-                  <td
-                    colSpan={8 + monthDates.length}
-                    className="text-center py-10 text-gray-500"
-                  >
-                    No guards found
+                  <td colSpan="8" className="text-center py-14 text-gray-500">
+                    Loading attendance...
+                  </td>
+                </tr>
+              ) : search.trim() && searchedGuards.length > 0 ? (
+                searchedGuards.map((guard) => {
+                  const todayRecord = todayAttendance.find(
+                    (item) => String(item.guardId) === String(guard.id)
+                  );
+
+                  return (
+                    <tr key={guard.id} className="border-b border-gray-100 hover:bg-blue-50/40 transition">
+                      <td className="px-6 py-5 font-semibold text-gray-800 whitespace-nowrap">{guard.name || "N/A"}</td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{guard.fatherName || "N/A"}</td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{guard.dutyLocation || "N/A"}</td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{guard.weaponType || "N/A"}</td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{guard.licenseNumber || guard.weaponNumber || "N/A"}</td>
+
+                      <td className="px-6 py-5 whitespace-nowrap">
+                        <select
+                          value={todayRecord?.status || "Present"}
+                          onChange={(e) =>
+                            handleStatusUpdate(guard, todayRecord || {}, e.target.value, today)
+                          }
+                          className={`px-3 py-2 rounded-xl text-xs font-semibold outline-none ${
+                            todayRecord?.status === "Absent"
+                              ? "bg-red-100 text-red-700"
+                              : todayRecord?.status === "Late"
+                              ? "bg-yellow-100 text-yellow-700"
+                              : "bg-green-100 text-green-700"
+                          }`}
+                        >
+                          <option value="Present">Present</option>
+                          <option value="Absent">Absent</option>
+                          <option value="Late">Late</option>
+                        </select>
+                      </td>
+
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {todayRecord?.time || "-"}
+                      </td>
+
+                      <td className="px-6 py-5 text-center">
+                        <button
+                          onClick={() => openGuardHistory(guard, todayRecord || {})}
+                          className="w-10 h-10 rounded-xl bg-blue-100 hover:bg-blue-200 inline-flex items-center justify-center transition"
+                        >
+                          <Eye size={18} className="text-blue-700" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : search.trim() && searchedGuards.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="text-center py-14 text-gray-500">
+                    No guard found for this search.
+                  </td>
+                </tr>
+              ) : todayAttendance.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="text-center py-14 text-gray-500">
+                    No guard has marked attendance today.
                   </td>
                 </tr>
               ) : (
-                filteredGuards.map((guard, index) => (
-                  <tr
-                    key={guard.id}
-                    className="border-b border-gray-100 hover:bg-gray-50"
-                  >
-                    <td className="p-4">{index + 1}</td>
+                todayAttendance.map((record) => {
+                  const guard = getGuardById(record.guardId);
 
-                    <td className="p-4 font-semibold text-gray-800">
-                      {guard.name}
-                    </td>
+                  return (
+                    <tr key={record.id} className="border-b border-gray-100 hover:bg-blue-50/40 transition">
+                      <td className="px-6 py-5 font-semibold text-gray-800 whitespace-nowrap">{record.guardName || guard?.name || "N/A"}</td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{record.fatherName || guard?.fatherName || "N/A"}</td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{getDutyPoint(record, guard)}</td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{getWeaponType(record, guard)}</td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{getLicenseNumber(record, guard)}</td>
 
-                    <td className="p-4 text-gray-700">
-                      {guard.fatherName}
-                    </td>
-
-                    <td className="p-4 text-gray-700">
-                      {guard.licenseNumber || "N/A"}
-                    </td>
-
-                    <td className="p-4 text-gray-700">
-                      {guard.weaponType || "N/A"}
-                    </td>
-
-                    <td className="p-4 text-gray-700">
-                      {guard.dutyLocation || "N/A"}
-                    </td>
-
-                    <td className="p-4 text-gray-700">
-                      {getJoinDate(guard)}
-                    </td>
-
-                    <td className="p-4">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => setEditGuard(guard)}
-                          className="w-10 h-10 rounded-xl bg-yellow-100 hover:bg-yellow-200 flex items-center justify-center"
-                        >
-                          <Pencil
-                            size={18}
-                            className="text-yellow-700"
-                          />
-                        </button>
-
-                        <button
-                          onClick={() =>
-                            handleDeleteGuard(guard.id)
+                      <td className="px-6 py-5 whitespace-nowrap">
+                        <select
+                          value={record.status || "Present"}
+                          onChange={(e) =>
+                            handleStatusUpdate(guard, record, e.target.value, record.date)
                           }
-                          className="w-10 h-10 rounded-xl bg-red-100 hover:bg-red-200 flex items-center justify-center"
+                          className={`px-3 py-2 rounded-xl text-xs font-semibold outline-none ${
+                            record.status === "Absent"
+                              ? "bg-red-100 text-red-700"
+                              : record.status === "Late"
+                              ? "bg-yellow-100 text-yellow-700"
+                              : "bg-green-100 text-green-700"
+                          }`}
                         >
-                          <Trash2
-                            size={18}
-                            className="text-red-700"
-                          />
+                          <option value="Present">Present</option>
+                          <option value="Absent">Absent</option>
+                          <option value="Late">Late</option>
+                        </select>
+                      </td>
+
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{record.time || "N/A"}</td>
+
+                      <td className="px-6 py-5 text-center">
+                        <button
+                          onClick={() => openGuardHistory(guard, record)}
+                          className="w-10 h-10 rounded-xl bg-blue-100 hover:bg-blue-200 inline-flex items-center justify-center transition"
+                        >
+                          <Eye size={18} className="text-blue-700" />
                         </button>
-                      </div>
-                    </td>
-
-                    {monthDates.map((date) => {
-                      const status = getStatus(guard, date);
-
-                      if (
-                        status === "NotJoined" ||
-                        status === "Future"
-                      ) {
-                        return (
-                          <td
-                            key={date}
-                            className="p-2 text-center text-gray-400"
-                          >
-                            -
-                          </td>
-                        );
-                      }
-
-                      return (
-                        <td key={date} className="p-2 text-center">
-                          <select
-                            value={status}
-                            onChange={(e) =>
-                              handleStatusChange(
-                                guard,
-                                date,
-                                e.target.value
-                              )
-                            }
-                            className={`w-12 h-9 rounded-xl text-xs font-bold text-center outline-none ${
-                              status === "Present"
-                                ? "bg-green-100 text-green-700"
-                                : "bg-red-100 text-red-700"
-                            }`}
-                          >
-                            <option value="Present">P</option>
-                            <option value="Absent">A</option>
-                          </select>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {editGuard && (
-        <EditGuardModal
-          guard={editGuard}
-          setGuard={setEditGuard}
-          onClose={() => setEditGuard(null)}
-          onSave={handleUpdateGuard}
+      {selectedGuard && (
+        <HistoryModal
+          guard={selectedGuard}
+          history={getGuardHistory(selectedGuard.guardId)}
+          historyMonth={historyMonth}
+          setHistoryMonth={setHistoryMonth}
+          historyDate={historyDate}
+          setHistoryDate={setHistoryDate}
+          getDutyPoint={getDutyPoint}
+          getWeaponType={getWeaponType}
+          getLicenseNumber={getLicenseNumber}
+          onStatusUpdate={handleStatusUpdate}
+          onClose={() => setSelectedGuard(null)}
         />
       )}
     </div>
   );
 }
 
-function EditGuardModal({
+function HistoryModal({
   guard,
-  setGuard,
+  history,
+  historyMonth,
+  setHistoryMonth,
+  historyDate,
+  setHistoryDate,
+  getDutyPoint,
+  getWeaponType,
+  getLicenseNumber,
+  onStatusUpdate,
   onClose,
-  onSave,
 }) {
-  const updateField = (field, value) => {
-    setGuard({
-      ...guard,
-      [field]: value,
-    });
-  };
+  const guardData = guard.guardData || {};
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white w-full max-w-6xl rounded-3xl shadow-2xl overflow-hidden my-8 max-h-[90vh] flex flex-col">
         <div className="bg-[#071739] text-white p-5 flex items-center justify-between">
-          <h2 className="text-xl font-bold">
-            Edit Guard Details
-          </h2>
+          <div>
+            <h2 className="text-xl font-bold">
+              Attendance History - {guard.guardName || guardData.name}
+            </h2>
+            <p className="text-sm text-gray-300">
+              Month and date wise previous attendance
+            </p>
+          </div>
 
           <button onClick={onClose}>
             <X size={24} />
           </button>
         </div>
 
-        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input
-            label="Guard Name"
-            value={guard.name}
-            onChange={(e) =>
-              updateField("name", e.target.value)
-            }
-          />
+        <div className="p-6 space-y-5 overflow-y-auto">
+          <div className="flex flex-col md:flex-row gap-4">
+            <input
+              type="month"
+              value={historyMonth}
+              onChange={(e) => setHistoryMonth(e.target.value)}
+              className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-blue-500"
+            />
 
-          <Input
-            label="Father Name"
-            value={guard.fatherName}
-            onChange={(e) =>
-              updateField("fatherName", e.target.value)
-            }
-          />
+            <input
+              type="date"
+              value={historyDate}
+              onChange={(e) => setHistoryDate(e.target.value)}
+              className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-blue-500"
+            />
 
-          <Input
-            label="License Number"
-            value={guard.licenseNumber}
-            onChange={(e) =>
-              updateField("licenseNumber", e.target.value)
-            }
-          />
+            <button
+              onClick={() => setHistoryDate("")}
+              className="bg-gray-100 hover:bg-gray-200 px-5 py-3 rounded-2xl"
+            >
+              Clear Date
+            </button>
+          </div>
 
-          <Input
-            label="Weapon Type"
-            value={guard.weaponType}
-            onChange={(e) =>
-              updateField("weaponType", e.target.value)
-            }
-          />
+          <div className="overflow-x-auto border border-gray-100 rounded-2xl">
+            <table className="w-full min-w-[950px]">
+              <thead className="bg-gradient-to-r from-[#071739] to-[#0A1F4D] text-white">
+                <tr>
+                  <th className="text-left px-6 py-4">Date</th>
+                  <th className="text-left px-6 py-4">Time</th>
+                  <th className="text-left px-6 py-4">Duty Point</th>
+                  <th className="text-left px-6 py-4">Weapon Type</th>
+                  <th className="text-left px-6 py-4">License No</th>
+                  <th className="text-left px-6 py-4">Status</th>
+                  <th className="text-left px-6 py-4">Marked By</th>
+                </tr>
+              </thead>
 
-          <Input
-            label="Duty Point"
-            value={guard.dutyLocation}
-            onChange={(e) =>
-              updateField("dutyLocation", e.target.value)
-            }
-          />
+              <tbody>
+                {history.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="text-center py-10 text-gray-500">
+                      No attendance history found.
+                    </td>
+                  </tr>
+                ) : (
+                  history.map((item) => (
+                    <tr key={item.id} className="border-b border-gray-100 hover:bg-blue-50/40">
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{item.date}</td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{item.time || "N/A"}</td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{getDutyPoint(item, guardData)}</td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{getWeaponType(item, guardData)}</td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{getLicenseNumber(item, guardData)}</td>
 
-          <Input
-            type="date"
-            label="Join Date"
-            value={guard.joinDate}
-            onChange={(e) =>
-              updateField("joinDate", e.target.value)
-            }
-          />
-        </div>
+                      <td className="px-6 py-5 whitespace-nowrap">
+                        <select
+                          value={item.status || "Present"}
+                          onChange={(e) =>
+                            onStatusUpdate(guardData, item, e.target.value, item.date)
+                          }
+                          className={`px-3 py-2 rounded-xl text-xs font-semibold outline-none ${
+                            item.status === "Absent"
+                              ? "bg-red-100 text-red-700"
+                              : item.status === "Late"
+                              ? "bg-yellow-100 text-yellow-700"
+                              : "bg-green-100 text-green-700"
+                          }`}
+                        >
+                          <option value="Present">Present</option>
+                          <option value="Absent">Absent</option>
+                          <option value="Late">Late</option>
+                        </select>
+                      </td>
 
-        <div className="p-6 pt-0 flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-5 py-3 rounded-2xl bg-gray-200"
-          >
-            Cancel
-          </button>
-
-          <button
-            onClick={onSave}
-            className="px-5 py-3 rounded-2xl bg-[#071739] text-white"
-          >
-            Save Changes
-          </button>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {item.markedBy || "Guard"}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function Input({
-  label,
-  value,
-  onChange,
-  type = "text",
-}) {
+function StatCard({ title, value, icon: Icon, color, bg }) {
   return (
-    <div>
-      <label className="text-sm font-semibold text-gray-600">
-        {label}
-      </label>
-
-      <input
-        type={type}
-        value={value || ""}
-        onChange={onChange}
-        className="mt-2 w-full bg-[#F4F7FE] border border-gray-200 rounded-2xl px-4 py-3 outline-none"
-      />
-    </div>
-  );
-}
-
-function StatCard({ title, value }) {
-  return (
-    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 hover:shadow-lg transition">
+      <div className={`w-14 h-14 rounded-2xl ${bg} flex items-center justify-center mb-4`}>
+        <Icon className={color} size={28} />
+      </div>
       <p className="text-gray-500 text-sm">{title}</p>
-
-      <h2 className="text-3xl font-bold text-gray-800 mt-2">
-        {value}
-      </h2>
+      <h2 className="text-3xl font-bold text-gray-800 mt-1">{value}</h2>
     </div>
   );
 }

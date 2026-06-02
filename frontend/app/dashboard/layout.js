@@ -142,7 +142,9 @@ export default function DashboardLayout({ children }) {
                 width={130}
                 height={130}
                 priority
-                className="object-contain scale-[1.4]"
+                className={`object-contain scale-[1.4] ${
+                  darkMode ? "invert brightness-0" : ""
+                }`}
               />
             </div>
 

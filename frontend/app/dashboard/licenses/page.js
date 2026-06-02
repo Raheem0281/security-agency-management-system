@@ -15,18 +15,15 @@ import {
 } from "lucide-react";
 
 const emptyLicense = {
-  guardId: "",
-  guardName: "",
-  licenseNumber: "",
   weaponType: "",
+  licenseNumber: "",
+  validityArea: "",
   issueDate: "",
   expiryDate: "",
-  status: "Active",
 };
 
 export default function LicensesPage() {
   const [search, setSearch] = useState("");
-  const [guards, setGuards] = useState([]);
   const [licenses, setLicenses] = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [viewLicense, setViewLicense] = useState(null);
@@ -35,19 +32,23 @@ export default function LicensesPage() {
   const [message, setMessage] = useState("");
 
   const loadData = () => {
-    setGuards(JSON.parse(localStorage.getItem("guards")) || []);
-    setLicenses(JSON.parse(localStorage.getItem("licenses")) || []);
+    try {
+      const saved = JSON.parse(localStorage.getItem("licenses")) || [];
+      setLicenses(saved);
+    } catch {
+      setLicenses([]);
+    }
   };
 
   useEffect(() => {
     loadData();
 
-    window.addEventListener("guards-updated", loadData);
     window.addEventListener("licenses-updated", loadData);
+    window.addEventListener("storage", loadData);
 
     return () => {
-      window.removeEventListener("guards-updated", loadData);
       window.removeEventListener("licenses-updated", loadData);
+      window.removeEventListener("storage", loadData);
     };
   }, []);
 
@@ -62,44 +63,42 @@ export default function LicensesPage() {
     setTimeout(() => setMessage(""), 2500);
   };
 
+  const getLicenseStatus = (expiryDate) => {
+    if (!expiryDate) return "N/A";
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const expiry = new Date(expiryDate);
+    expiry.setHours(0, 0, 0, 0);
+
+    return expiry >= today ? "Valid" : "Expired";
+  };
+
   const filteredLicenses = useMemo(() => {
     const value = search.toLowerCase();
 
     return licenses.filter(
       (license) =>
-        license.guardName?.toLowerCase().includes(value) ||
+        license.weaponType?.toLowerCase().includes(value) ||
         license.licenseNumber?.toLowerCase().includes(value) ||
-        license.weaponType?.toLowerCase().includes(value)
+        license.validityArea?.toLowerCase().includes(value)
     );
   }, [licenses, search]);
 
-  const activeCount = licenses.filter(
-    (license) => license.status === "Active"
+  const validCount = licenses.filter(
+    (license) => getLicenseStatus(license.expiryDate) === "Valid"
   ).length;
 
   const expiredCount = licenses.filter(
-    (license) => license.status === "Expired"
+    (license) => getLicenseStatus(license.expiryDate) === "Expired"
   ).length;
-
-  const handleGuardSelect = (guardId, setter, currentLicense) => {
-    const guard = guards.find(
-      (item) => String(item.id) === String(guardId)
-    );
-
-    setter({
-      ...currentLicense,
-      guardId,
-      guardName: guard?.name || "",
-      licenseNumber: guard?.licenseNumber || "",
-      weaponType: guard?.weaponType || "",
-    });
-  };
 
   const validateLicense = (license) => {
     return (
-      license.guardName &&
-      license.licenseNumber &&
       license.weaponType &&
+      license.licenseNumber &&
+      license.validityArea &&
       license.issueDate &&
       license.expiryDate
     );
@@ -111,14 +110,14 @@ export default function LicensesPage() {
       return;
     }
 
-    const updated = [
-      {
-        id: Date.now(),
-        ...newLicense,
-        createdAt: new Date().toISOString(),
-      },
-      ...licenses,
-    ];
+    const newItem = {
+      id: Date.now(),
+      ...newLicense,
+      status: getLicenseStatus(newLicense.expiryDate),
+      createdAt: new Date().toISOString(),
+    };
+
+    const updated = [newItem, ...licenses];
 
     saveLicenses(updated);
     setNewLicense(emptyLicense);
@@ -127,13 +126,19 @@ export default function LicensesPage() {
   };
 
   const handleUpdateLicense = () => {
-    if (!validateLicense(editLicense)) {
+    if (!editLicense || !validateLicense(editLicense)) {
       showMessage("Please fill all required fields");
       return;
     }
 
     const updated = licenses.map((license) =>
-      license.id === editLicense.id ? editLicense : license
+      String(license.id) === String(editLicense.id)
+        ? {
+            ...editLicense,
+            status: getLicenseStatus(editLicense.expiryDate),
+            updatedAt: new Date().toISOString(),
+          }
+        : license
     );
 
     saveLicenses(updated);
@@ -144,7 +149,10 @@ export default function LicensesPage() {
   const handleDelete = (id) => {
     if (!confirm("Delete this license?")) return;
 
-    const updated = licenses.filter((license) => license.id !== id);
+    const updated = licenses.filter(
+      (license) => String(license.id) !== String(id)
+    );
+
     saveLicenses(updated);
     showMessage("License deleted successfully");
   };
@@ -159,7 +167,8 @@ export default function LicensesPage() {
           </h1>
 
           <p className="text-gray-500 mt-1">
-            Manage weapon licenses connected with guards
+            Manage weapon license number, weapon type, validity area and expiry
+            status
           </p>
         </div>
 
@@ -189,8 +198,8 @@ export default function LicensesPage() {
         />
 
         <StatCard
-          title="Active Licenses"
-          value={activeCount}
+          title="Valid Licenses"
+          value={validCount}
           icon={<Shield className="text-green-600" size={28} />}
           bg="bg-green-100"
           color="text-green-600"
@@ -208,14 +217,11 @@ export default function LicensesPage() {
       {/* SEARCH */}
       <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
         <div className="relative">
-          <Search
-            className="absolute left-4 top-3.5 text-gray-400"
-            size={20}
-          />
+          <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
 
           <input
             type="text"
-            placeholder="Search by guard, license number or weapon type..."
+            placeholder="Search by weapon type, license number or validity area..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-blue-500"
@@ -226,93 +232,127 @@ export default function LicensesPage() {
       {/* TABLE */}
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1000px]">
+          <table className="w-full min-w-[1050px]">
             <thead className="bg-gradient-to-r from-[#071739] to-[#0A1F4D] text-white">
               <tr>
-                <th className="text-left px-6 py-4">Guard</th>
-                <th className="text-left px-6 py-4">License Number</th>
-                <th className="text-left px-6 py-4">Weapon Type</th>
-                <th className="text-left px-6 py-4">Issue Date</th>
-                <th className="text-left px-6 py-4">Expiry Date</th>
-                <th className="text-left px-6 py-4">Status</th>
-                <th className="text-center px-6 py-4">Actions</th>
+                <th className="px-5 py-4 text-left whitespace-nowrap">
+                  Sr. No#
+                </th>
+
+                <th className="px-5 py-4 text-left whitespace-nowrap">
+                  Weapon Type
+                </th>
+
+                <th className="px-5 py-4 text-left whitespace-nowrap">
+                  License Number
+                </th>
+
+                <th className="px-5 py-4 text-left whitespace-nowrap">
+                  Validity Area
+                </th>
+
+                <th className="px-5 py-4 text-left whitespace-nowrap">
+                  Issue Date
+                </th>
+
+                <th className="px-5 py-4 text-left whitespace-nowrap">
+                  Expiry Date
+                </th>
+
+                <th className="px-5 py-4 text-left whitespace-nowrap">
+                  Status
+                </th>
+
+                <th className="px-5 py-4 text-center whitespace-nowrap">
+                  Actions
+                </th>
               </tr>
             </thead>
 
             <tbody>
               {filteredLicenses.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan="7"
-                    className="text-center py-12 text-gray-500"
-                  >
-                    No licenses found
+                  <td colSpan="8" className="text-center py-12 text-gray-500">
+                    No licenses found.
                   </td>
                 </tr>
               ) : (
-                filteredLicenses.map((license) => (
-                  <tr
-                    key={license.id}
-                    className="border-b border-gray-100 hover:bg-blue-50/40 transition"
-                  >
-                    <td className="px-6 py-5 font-semibold text-gray-800">
-                      {license.guardName}
-                    </td>
+                filteredLicenses.map((license, index) => {
+                  const status = getLicenseStatus(license.expiryDate);
 
-                    <td className="px-6 py-5 text-gray-700">
-                      {license.licenseNumber}
-                    </td>
+                  return (
+                    <tr
+                      key={license.id}
+                      className="border-b border-gray-100 hover:bg-blue-50/40 transition"
+                    >
+                      <td className="px-5 py-4 text-gray-700 whitespace-nowrap">
+                        {index + 1}
+                      </td>
 
-                    <td className="px-6 py-5 text-gray-700">
-                      {license.weaponType}
-                    </td>
+                      <td className="px-5 py-4 font-semibold text-gray-800 whitespace-nowrap">
+                        {license.weaponType || "N/A"}
+                      </td>
 
-                    <td className="px-6 py-5 text-gray-700">
-                      {license.issueDate}
-                    </td>
+                      <td className="px-5 py-4 text-gray-700 whitespace-nowrap">
+                        {license.licenseNumber || "N/A"}
+                      </td>
 
-                    <td className="px-6 py-5 text-gray-700">
-                      {license.expiryDate}
-                    </td>
+                      <td className="px-5 py-4 text-gray-700 whitespace-nowrap">
+                        {license.validityArea || "N/A"}
+                      </td>
 
-                    <td className="px-6 py-5">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          license.status === "Active"
-                            ? "bg-green-100 text-green-700"
-                            : "bg-red-100 text-red-700"
-                        }`}
-                      >
-                        {license.status}
-                      </span>
-                    </td>
+                      <td className="px-5 py-4 text-gray-700 whitespace-nowrap">
+                        {license.issueDate || "N/A"}
+                      </td>
 
-                    <td className="px-6 py-5">
-                      <div className="flex items-center justify-center gap-3">
-                        <button
-                          onClick={() => setViewLicense(license)}
-                          className="w-10 h-10 rounded-xl bg-blue-100 hover:bg-blue-200 flex items-center justify-center"
+                      <td className="px-5 py-4 text-gray-700 whitespace-nowrap">
+                        {license.expiryDate || "N/A"}
+                      </td>
+
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            status === "Valid"
+                              ? "bg-green-100 text-green-700"
+                              : status === "Expired"
+                              ? "bg-red-100 text-red-700"
+                              : "bg-gray-100 text-gray-700"
+                          }`}
                         >
-                          <Eye size={18} className="text-blue-700" />
-                        </button>
+                          {status}
+                        </span>
+                      </td>
 
-                        <button
-                          onClick={() => setEditLicense(license)}
-                          className="w-10 h-10 rounded-xl bg-yellow-100 hover:bg-yellow-200 flex items-center justify-center"
-                        >
-                          <Pencil size={18} className="text-yellow-700" />
-                        </button>
+                      <td className="px-5 py-4 text-center whitespace-nowrap">
+                        <div className="flex justify-center gap-2">
+                          <button
+                            onClick={() => setViewLicense(license)}
+                            className="w-10 h-10 rounded-xl bg-blue-100 hover:bg-blue-200 inline-flex items-center justify-center transition"
+                            title="View"
+                          >
+                            <Eye size={18} className="text-blue-700" />
+                          </button>
 
-                        <button
-                          onClick={() => handleDelete(license.id)}
-                          className="w-10 h-10 rounded-xl bg-red-100 hover:bg-red-200 flex items-center justify-center"
-                        >
-                          <Trash2 size={18} className="text-red-700" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          <button
+                            onClick={() => setEditLicense(license)}
+                            className="w-10 h-10 rounded-xl bg-yellow-100 hover:bg-yellow-200 inline-flex items-center justify-center transition"
+                            title="Edit"
+                          >
+                            <Pencil size={18} className="text-yellow-700" />
+                          </button>
+
+                          <button
+                            onClick={() => handleDelete(license.id)}
+                            className="w-10 h-10 rounded-xl bg-red-100 hover:bg-red-200 inline-flex items-center justify-center transition"
+                            title="Delete"
+                          >
+                            <Trash2 size={18} className="text-red-700" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -322,11 +362,12 @@ export default function LicensesPage() {
       {showAddModal && (
         <LicenseFormModal
           title="Add New License"
-          guards={guards}
           license={newLicense}
           setLicense={setNewLicense}
-          onGuardSelect={handleGuardSelect}
-          onClose={() => setShowAddModal(false)}
+          onClose={() => {
+            setNewLicense(emptyLicense);
+            setShowAddModal(false);
+          }}
           onSubmit={handleAddLicense}
           submitText="Save License"
         />
@@ -335,10 +376,8 @@ export default function LicensesPage() {
       {editLicense && (
         <LicenseFormModal
           title="Edit License"
-          guards={guards}
           license={editLicense}
           setLicense={setEditLicense}
-          onGuardSelect={handleGuardSelect}
           onClose={() => setEditLicense(null)}
           onSubmit={handleUpdateLicense}
           submitText="Save Changes"
@@ -348,6 +387,7 @@ export default function LicensesPage() {
       {viewLicense && (
         <ViewLicenseModal
           license={viewLicense}
+          status={getLicenseStatus(viewLicense.expiryDate)}
           onClose={() => setViewLicense(null)}
         />
       )}
@@ -357,14 +397,19 @@ export default function LicensesPage() {
 
 function LicenseFormModal({
   title,
-  guards,
   license,
   setLicense,
-  onGuardSelect,
   onClose,
   onSubmit,
   submitText,
 }) {
+  const updateField = (field, value) => {
+    setLicense({
+      ...license,
+      [field]: value,
+    });
+  };
+
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden">
@@ -377,42 +422,21 @@ function LicenseFormModal({
         </div>
 
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
-          <select
-            value={license.guardId}
-            onChange={(e) =>
-              onGuardSelect(e.target.value, setLicense, license)
-            }
-            className="border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-blue-500"
-          >
-            <option value="">Select Guard</option>
-
-            {guards.map((guard) => (
-              <option key={guard.id} value={guard.id}>
-                {guard.name}
-              </option>
-            ))}
-          </select>
+          <WeaponTypeSelect
+            value={license.weaponType}
+            onChange={(value) => updateField("weaponType", value)}
+          />
 
           <InputField
             icon={<BadgeCheck size={18} />}
             placeholder="License Number"
             value={license.licenseNumber}
-            onChange={(e) =>
-              setLicense({
-                ...license,
-                licenseNumber: e.target.value,
-              })
-            }
+            onChange={(e) => updateField("licenseNumber", e.target.value)}
           />
 
-          <WeaponTypeSelect
-            value={license.weaponType}
-            onChange={(value) =>
-              setLicense({
-                ...license,
-                weaponType: value,
-              })
-            }
+          <ValidityAreaSelect
+            value={license.validityArea}
+            onChange={(value) => updateField("validityArea", value)}
           />
 
           <InputField
@@ -420,12 +444,7 @@ function LicenseFormModal({
             type="date"
             placeholder="Issue Date"
             value={license.issueDate}
-            onChange={(e) =>
-              setLicense({
-                ...license,
-                issueDate: e.target.value,
-              })
-            }
+            onChange={(e) => updateField("issueDate", e.target.value)}
           />
 
           <InputField
@@ -433,27 +452,8 @@ function LicenseFormModal({
             type="date"
             placeholder="Expiry Date"
             value={license.expiryDate}
-            onChange={(e) =>
-              setLicense({
-                ...license,
-                expiryDate: e.target.value,
-              })
-            }
+            onChange={(e) => updateField("expiryDate", e.target.value)}
           />
-
-          <select
-            value={license.status}
-            onChange={(e) =>
-              setLicense({
-                ...license,
-                status: e.target.value,
-              })
-            }
-            className="border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-blue-500"
-          >
-            <option>Active</option>
-            <option>Expired</option>
-          </select>
         </div>
 
         <div className="p-6 pt-0 flex justify-end gap-3">
@@ -473,6 +473,27 @@ function LicenseFormModal({
         </div>
       </div>
     </div>
+  );
+}
+
+function ValidityAreaSelect({ value, onChange }) {
+  return (
+    <select
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      className="border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-blue-500"
+    >
+      <option value="">Select Validity Area</option>
+      <option value="Punjab">Punjab</option>
+      <option value="Islamabad">Islamabad</option>
+      <option value="KPK">KPK</option>
+      <option value="Sindh">Sindh</option>
+      <option value="Balochistan">Balochistan</option>
+      <option value="Islamabad / Punjab">Islamabad / Punjab</option>
+      <option value="Punjab / KPK">Punjab / KPK</option>
+      <option value="Punjab / Sindh">Punjab / Sindh</option>
+      <option value="All Pakistan">All Pakistan</option>
+    </select>
   );
 }
 
@@ -511,7 +532,7 @@ function WeaponTypeSelect({ value, onChange }) {
   );
 }
 
-function ViewLicenseModal({ license, onClose }) {
+function ViewLicenseModal({ license, status, onClose }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl">
@@ -526,30 +547,22 @@ function ViewLicenseModal({ license, onClose }) {
         </div>
 
         <div className="space-y-3 text-gray-700">
-          <Detail label="Guard" value={license.guardName} />
-          <Detail label="License Number" value={license.licenseNumber} />
           <Detail label="Weapon Type" value={license.weaponType} />
+          <Detail label="License Number" value={license.licenseNumber} />
+          <Detail label="Validity Area" value={license.validityArea} />
           <Detail label="Issue Date" value={license.issueDate} />
           <Detail label="Expiry Date" value={license.expiryDate} />
-          <Detail label="Status" value={license.status} />
+          <Detail label="Status" value={status} />
         </div>
       </div>
     </div>
   );
 }
 
-function InputField({
-  icon,
-  placeholder,
-  value,
-  onChange,
-  type = "text",
-}) {
+function InputField({ icon, placeholder, value, onChange, type = "text" }) {
   return (
     <div className="relative">
-      <div className="absolute left-4 top-3.5 text-gray-400">
-        {icon}
-      </div>
+      <div className="absolute left-4 top-3.5 text-gray-400">{icon}</div>
 
       <input
         type={type}
@@ -568,10 +581,7 @@ function StatCard({ title, value, icon, bg, color }) {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-gray-500 text-sm">{title}</p>
-
-          <h2 className={`text-3xl font-bold mt-1 ${color}`}>
-            {value}
-          </h2>
+          <h2 className={`text-3xl font-bold mt-1 ${color}`}>{value}</h2>
         </div>
 
         <div

@@ -7,10 +7,8 @@ import {
   Search,
   Trash2,
   RefreshCcw,
-  CalendarCheck,
   User,
   Building2,
-  Clock,
 } from "lucide-react";
 
 const emptyDuty = {
@@ -42,11 +40,13 @@ export default function DutiesPage() {
     window.addEventListener("guards-updated", loadData);
     window.addEventListener("clients-updated", loadData);
     window.addEventListener("duties-updated", loadData);
+    window.addEventListener("storage", loadData);
 
     return () => {
       window.removeEventListener("guards-updated", loadData);
       window.removeEventListener("clients-updated", loadData);
       window.removeEventListener("duties-updated", loadData);
+      window.removeEventListener("storage", loadData);
     };
   }, []);
 
@@ -59,6 +59,12 @@ export default function DutiesPage() {
     setDuties(updatedDuties);
     localStorage.setItem("duties", JSON.stringify(updatedDuties));
     window.dispatchEvent(new Event("duties-updated"));
+  };
+
+  const saveGuards = (updatedGuards) => {
+    setGuards(updatedGuards);
+    localStorage.setItem("guards", JSON.stringify(updatedGuards));
+    window.dispatchEvent(new Event("guards-updated"));
   };
 
   const activeGuards = guards.filter((guard) => guard.status === "Active");
@@ -74,23 +80,26 @@ export default function DutiesPage() {
     const value = search.toLowerCase();
 
     return duties.filter((duty) => {
-      const guard = getGuard(duty.guardId);
-      const client = getClient(duty.clientId);
-
       return (
-        guard?.name?.toLowerCase().includes(value) ||
-        guard?.fatherName?.toLowerCase().includes(value) ||
-        client?.company?.toLowerCase().includes(value) ||
-        client?.owner?.toLowerCase().includes(value) ||
+        duty.guardName?.toLowerCase().includes(value) ||
+        duty.fatherName?.toLowerCase().includes(value) ||
+        duty.clientName?.toLowerCase().includes(value) ||
+        duty.licenseNumber?.toLowerCase().includes(value) ||
+        duty.weaponType?.toLowerCase().includes(value) ||
         duty.dutyPoint?.toLowerCase().includes(value) ||
         duty.shift?.toLowerCase().includes(value) ||
         duty.date?.includes(search)
       );
     });
-  }, [duties, guards, clients, search]);
+  }, [duties, search]);
 
   const handleAddDuty = () => {
-    if (!newDuty.guardId || !newDuty.clientId || !newDuty.date || !newDuty.dutyPoint) {
+    if (
+      !newDuty.guardId ||
+      !newDuty.clientId ||
+      !newDuty.date ||
+      !newDuty.dutyPoint
+    ) {
       showMessage("Please select guard, client, duty point and date");
       return;
     }
@@ -98,21 +107,32 @@ export default function DutiesPage() {
     const guard = getGuard(newDuty.guardId);
     const client = getClient(newDuty.clientId);
 
+    if (!guard || !client) {
+      showMessage("Selected guard or client not found");
+      return;
+    }
+
     const duty = {
       id: Date.now(),
-      ...newDuty,
-      guardName: guard?.name || "",
-      fatherName: guard?.fatherName || "",
-      clientName: client?.company || "",
-      weaponNumber: guard?.weaponNumber || guard?.weapon || guard?.licenseNumber || "",
-      weaponType: guard?.weaponType || "",
+      guardId: guard.id,
+      clientId: client.id,
+      guardName: guard.name,
+      fatherName: guard.fatherName || "",
+      clientName: client.company || client.name || "",
+      clientOwner: client.owner || "",
+      licenseNumber: guard.licenseNumber || "",
+      weaponType: guard.weaponType || "",
+      shift: newDuty.shift,
+      dutyTime: newDuty.dutyTime,
+      dutyPoint: newDuty.dutyPoint,
+      date: newDuty.date,
       createdAt: new Date().toISOString(),
     };
 
     saveDuties([duty, ...duties]);
 
     const updatedGuards = guards.map((item) =>
-      String(item.id) === String(newDuty.guardId)
+      String(item.id) === String(guard.id)
         ? {
             ...item,
             dutyLocation: newDuty.dutyPoint,
@@ -122,9 +142,7 @@ export default function DutiesPage() {
         : item
     );
 
-    localStorage.setItem("guards", JSON.stringify(updatedGuards));
-    setGuards(updatedGuards);
-    window.dispatchEvent(new Event("guards-updated"));
+    saveGuards(updatedGuards);
 
     setNewDuty(emptyDuty);
     showMessage("Duty assigned successfully ✅");
@@ -133,8 +151,9 @@ export default function DutiesPage() {
   const handleDeleteDuty = (id) => {
     if (!confirm("Delete this duty?")) return;
 
-    saveDuties(duties.filter((duty) => duty.id !== id));
-    showMessage("Duty deleted");
+    const updatedDuties = duties.filter((duty) => duty.id !== id);
+    saveDuties(updatedDuties);
+    showMessage("Duty deleted successfully");
   };
 
   const handleRefresh = () => {
@@ -144,13 +163,16 @@ export default function DutiesPage() {
 
   return (
     <div className="space-y-6">
+      {/* HEADER */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">
             Duty Assignment
           </h1>
+
           <p className="text-gray-500 mt-1">
-            Assign active guards to clients and update guard duty point
+            Assign guards to clients and keep duty point connected with
+            attendance
           </p>
         </div>
 
@@ -169,12 +191,28 @@ export default function DutiesPage() {
         </div>
       )}
 
+      {/* STATS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <StatCard title="Total Duties" value={duties.length} icon={ClipboardList} />
-        <StatCard title="Active Guards" value={activeGuards.length} icon={User} />
-        <StatCard title="Active Clients" value={activeClients.length} icon={Building2} />
+        <StatCard
+          title="Total Duties"
+          value={duties.length}
+          icon={ClipboardList}
+        />
+
+        <StatCard
+          title="Active Guards"
+          value={activeGuards.length}
+          icon={User}
+        />
+
+        <StatCard
+          title="Active Clients"
+          value={activeClients.length}
+          icon={Building2}
+        />
       </div>
 
+      {/* ADD DUTY */}
       <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
         <h2 className="text-2xl font-bold text-gray-800 mb-5">
           Assign New Duty
@@ -189,9 +227,11 @@ export default function DutiesPage() {
             className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-blue-500"
           >
             <option value="">Select Guard</option>
+
             {activeGuards.map((guard) => (
               <option key={guard.id} value={guard.id}>
-                {guard.name} {guard.fatherName ? `S/O ${guard.fatherName}` : ""}
+                {guard.name}
+                {guard.fatherName ? ` S/O ${guard.fatherName}` : ""}
               </option>
             ))}
           </select>
@@ -200,6 +240,7 @@ export default function DutiesPage() {
             value={newDuty.clientId}
             onChange={(e) => {
               const client = getClient(e.target.value);
+
               setNewDuty({
                 ...newDuty,
                 clientId: e.target.value,
@@ -209,9 +250,10 @@ export default function DutiesPage() {
             className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-blue-500"
           >
             <option value="">Select Client</option>
+
             {activeClients.map((client) => (
               <option key={client.id} value={client.id}>
-                {client.company}
+                {client.company || client.name}
               </option>
             ))}
           </select>
@@ -230,12 +272,15 @@ export default function DutiesPage() {
 
           <input
             type="text"
-            placeholder="Duty Time e.g. 8AM - 8PM"
+            placeholder="7:00 PM - 7:00 AM"
             value={newDuty.dutyTime}
             onChange={(e) =>
-              setNewDuty({ ...newDuty, dutyTime: e.target.value })
+              setNewDuty({
+                ...newDuty,
+                dutyTime: e.target.value,
+              })
             }
-            className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-blue-500"
+            className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-blue-500 min-w-[220px]"
           />
 
           <input
@@ -267,12 +312,14 @@ export default function DutiesPage() {
         </div>
       </div>
 
+      {/* SEARCH */}
       <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
         <div className="relative">
           <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
+
           <input
             type="text"
-            placeholder="Search by guard, father name, client, duty point, shift or date..."
+            placeholder="Search by guard, father name, client, license no, weapon type, duty point, shift or date..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-blue-500"
@@ -280,82 +327,123 @@ export default function DutiesPage() {
         </div>
       </div>
 
+      {/* TABLE */}
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-6 py-5 border-b border-gray-100">
-          <h2 className="text-2xl font-bold text-gray-800">
-            Assigned Duties
-          </h2>
-          <p className="text-gray-500 text-sm mt-1">
-            Duties are saved and connected with guards, dashboard and attendance
-          </p>
-        </div>
+  {/* TABLE HEADER */}
+  <div className="px-6 py-5 border-b border-gray-100">
+    <h2 className="text-2xl font-bold text-gray-800">
+      Assigned Duties
+    </h2>
 
+    <p className="text-gray-500 text-sm mt-1">
+      Professional duty records connected with guards and clients
+    </p>
+  </div>
+
+        {/* TABLE */}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px]">
-            <thead className="bg-gradient-to-r from-[#071739] to-[#0A1F4D] text-white">
+          <table className="w-full min-w-[1600px] border-collapse">
+            <thead className="bg-gradient-to-r from-[#071739] to-[#0A1F4D] text-white whitespace-nowrap">
               <tr>
-                <th className="text-left px-6 py-4">Guard</th>
-                <th className="text-left px-6 py-4">Client</th>
-                <th className="text-left px-6 py-4">Duty Point</th>
-                <th className="text-left px-6 py-4">Shift</th>
-                <th className="text-left px-6 py-4">Duty Time</th>
-                <th className="text-left px-6 py-4">Weapon</th>
-                <th className="text-left px-6 py-4">Date</th>
-                <th className="text-center px-6 py-4">Action</th>
+                <th className="px-5 py-4 text-left font-semibold">
+                  Guard Name
+                </th>
+                
+                <th className="px-5 py-4 text-left font-semibold">
+                  Father Name
+                </th>
+                
+                <th className="px-5 py-4 text-left font-semibold">
+                  Client Name
+                </th>
+                
+                <th className="px-5 py-4 text-left font-semibold">
+                  License No
+                </th>
+                
+                <th className="px-5 py-4 text-left font-semibold">
+                  Weapon Type
+                </th>
+                
+                <th className="px-5 py-4 text-left font-semibold">
+                  Duty Point
+                </th>
+                
+                <th className="px-5 py-4 text-left font-semibold">
+                  Shift
+                </th>
+                
+                <th className="px-5 py-4 text-left font-semibold whitespace-nowrap">
+                  Duty Time
+                </th>
+                
+                <th className="px-5 py-4 text-left font-semibold">
+                  Date
+                </th>
+                
+                <th className="px-5 py-4 text-center font-semibold">
+                  Action
+                </th>
               </tr>
             </thead>
-
+                
             <tbody>
               {filteredDuties.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="text-center py-12 text-gray-500">
+                  <td
+                    colSpan="10"
+                    className="text-center py-12 text-gray-500"
+                  >
                     No duties assigned yet.
                   </td>
                 </tr>
               ) : (
-                filteredDuties.map((duty) => (
+                filteredDuties.map((duty, index) => (
                   <tr
                     key={duty.id}
-                    className="border-b border-gray-100 hover:bg-blue-50/40 transition"
+                    className={`border-b border-gray-100 hover:bg-blue-50/40 transition-all ${
+                      index % 2 === 0 ? "bg-white" : "bg-gray-50/40"
+                    }`}
                   >
-                    <td className="px-6 py-5">
-                      <div>
-                        <h3 className="font-semibold text-gray-800">
-                          {duty.guardName || getGuard(duty.guardId)?.name || "N/A"}
-                        </h3>
-                        <p className="text-xs text-gray-500">
-                          {duty.fatherName || getGuard(duty.guardId)?.fatherName || "N/A"}
-                        </p>
-                      </div>
+                    <td className="px-5 py-4 whitespace-nowrap font-semibold text-gray-800">
+                      {duty.guardName || "N/A"}
                     </td>
-
-                    <td className="px-6 py-5 text-gray-700">
-                      {duty.clientName || getClient(duty.clientId)?.company || "N/A"}
+                  
+                    <td className="px-5 py-4 whitespace-nowrap text-gray-700">
+                      {duty.fatherName || "N/A"}
                     </td>
-
-                    <td className="px-6 py-5 text-gray-700">
-                      {duty.dutyPoint}
+                  
+                    <td className="px-5 py-4 whitespace-nowrap text-gray-700">
+                      {duty.clientName || "N/A"}
                     </td>
-
-                    <td className="px-6 py-5 text-gray-700">
-                      {duty.shift}
+                  
+                    <td className="px-5 py-4 whitespace-nowrap text-gray-700 font-medium">
+                      {duty.licenseNumber || "N/A"}
                     </td>
-
-                    <td className="px-6 py-5 text-gray-700">
+                  
+                    <td className="px-5 py-4 whitespace-nowrap text-gray-700">
+                      {duty.weaponType || "N/A"}
+                    </td>
+                  
+                    <td className="px-5 py-4 whitespace-nowrap text-gray-700">
+                      {duty.dutyPoint || "N/A"}
+                    </td>
+                  
+                    <td className="px-5 py-4 whitespace-nowrap">
+                      <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-semibold">
+                        {duty.shift || "N/A"}
+                      </span>
+                    </td>
+                  
+                    <td className="px-5 py-4 whitespace-nowrap text-gray-700 font-medium">
                       {duty.dutyTime || "N/A"}
                     </td>
-
-                    <td className="px-6 py-5 text-gray-700">
-                      {(duty.weaponNumber || getGuard(duty.guardId)?.weaponNumber || "N/A") +
-                        " / " +
-                        (duty.weaponType || getGuard(duty.guardId)?.weaponType || "N/A")}
+                  
+                    <td className="px-5 py-4 whitespace-nowrap text-gray-700">
+                      {duty.date || "N/A"}
                     </td>
-
-                    <td className="px-6 py-5 text-gray-700">
-                      {duty.date}
-                    </td>
-
-                    <td className="px-6 py-5 text-center">
+                  
+                    <td className="px-5 py-4 text-center">
                       <button
                         onClick={() => handleDeleteDuty(duty.id)}
                         className="bg-red-100 hover:bg-red-200 text-red-700 w-10 h-10 rounded-xl inline-flex items-center justify-center transition"
@@ -378,7 +466,9 @@ function StatCard({ title, value, icon: Icon }) {
   return (
     <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 hover:shadow-lg transition">
       <Icon className="text-blue-600 mb-3" size={28} />
+
       <p className="text-gray-500 text-sm">{title}</p>
+
       <h2 className="text-3xl font-bold text-gray-800 mt-1">{value}</h2>
     </div>
   );

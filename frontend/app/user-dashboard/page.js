@@ -37,14 +37,27 @@ export default function UserDashboard() {
       return;
     }
 
-    setGuard(parsedUser);
+    const allGuards = JSON.parse(localStorage.getItem("guards")) || [];
+
+    const latestGuard =
+      allGuards.find((g) => String(g.id) === String(parsedUser.id)) ||
+      parsedUser;
+
+    const updatedGuard = {
+      ...parsedUser,
+      ...latestGuard,
+      role: "guard",
+    };
+
+    localStorage.setItem("user", JSON.stringify(updatedGuard));
+    setGuard(updatedGuard);
 
     const todayDate = new Date().toISOString().split("T")[0];
     const records = JSON.parse(localStorage.getItem("attendanceRecords")) || [];
 
     const alreadyMarked = records.find(
       (record) =>
-        String(record.guardId) === String(parsedUser.id) &&
+        String(record.guardId) === String(updatedGuard.id) &&
         record.date === todayDate &&
         record.status === "Present"
     );
@@ -60,14 +73,16 @@ export default function UserDashboard() {
 
     const now = new Date();
     const date = now.toISOString().split("T")[0];
-    const time = now.toLocaleTimeString();
+    const time = now.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
     const records = JSON.parse(localStorage.getItem("attendanceRecords")) || [];
 
     const existingRecord = records.find(
       (record) =>
-        String(record.guardId) === String(guard.id) &&
-        record.date === date
+        String(record.guardId) === String(guard.id) && record.date === date
     );
 
     if (existingRecord?.status === "Present") {
@@ -77,11 +92,16 @@ export default function UserDashboard() {
 
     let updatedRecords;
 
-    if (existingRecord?.status === "Absent") {
+    if (existingRecord) {
       updatedRecords = records.map((record) =>
         record.id === existingRecord.id
           ? {
               ...record,
+              guardName: guard.name,
+              fatherName: guard.fatherName,
+              dutyLocation: guard.dutyLocation,
+              weaponType: guard.weaponType,
+              licenseNumber: guard.licenseNumber || guard.weaponNumber,
               status: "Present",
               time,
               markedBy: "Guard",
@@ -94,7 +114,10 @@ export default function UserDashboard() {
         guardId: guard.id,
         guardName: guard.name,
         fatherName: guard.fatherName,
+        cnic: guard.cnic,
         dutyLocation: guard.dutyLocation,
+        weaponType: guard.weaponType,
+        licenseNumber: guard.licenseNumber || guard.weaponNumber,
         status: "Present",
         date,
         time,
@@ -110,7 +133,9 @@ export default function UserDashboard() {
     const notification = {
       id: Date.now(),
       title: "Guard Attendance Marked",
-      message: `${guard.name} marked attendance at ${guard.dutyLocation}`,
+      message: `${guard.name} marked attendance at ${
+        guard.dutyLocation || "duty point"
+      }`,
       time,
       date,
       type: "attendance",
@@ -129,7 +154,7 @@ export default function UserDashboard() {
     const activity = {
       id: Date.now() + 1,
       title: "Attendance Marked",
-      message: `${guard.name} reached ${guard.dutyLocation}`,
+      message: `${guard.name} reached ${guard.dutyLocation || "duty point"}`,
       time,
       date,
     };
@@ -159,7 +184,9 @@ export default function UserDashboard() {
   if (!guard) {
     return (
       <div className="min-h-screen bg-[#F4F7FE] flex items-center justify-center">
-        <p className="text-gray-600 font-semibold">Loading guard dashboard...</p>
+        <p className="text-gray-600 font-semibold">
+          Loading guard dashboard...
+        </p>
       </div>
     );
   }
@@ -228,19 +255,49 @@ export default function UserDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
-          <h2 className="text-2xl font-bold text-gray-800 mb-5">Today Duty</h2>
+          <h2 className="text-2xl font-bold text-gray-800 mb-5">
+            Today Duty
+          </h2>
 
           <div className="space-y-4">
-            <DetailRow icon={<MapPin className="text-blue-600" />} label="Duty Point" value={guard.dutyLocation || "No duty assigned"} />
-            <DetailRow icon={<Clock className="text-green-600" />} label="Shift" value={guard.shift || "Not assigned"} />
-            <DetailRow icon={<CalendarCheck className="text-purple-600" />} label="Duty Time" value={guard.dutyTime || "Not assigned"} />
-            <DetailRow icon={<Shield className="text-orange-600" />} label="Weapon" value={guard.weapon || "Not assigned"} />
-            <DetailRow icon={<BadgeCheck className="text-red-600" />} label="License No" value={guard.licenseNumber || "Not assigned"} />
+            <DetailRow
+              icon={<MapPin className="text-blue-600" />}
+              label="Duty Point"
+              value={guard.dutyLocation || "No duty assigned"}
+            />
+
+            <DetailRow
+              icon={<Clock className="text-green-600" />}
+              label="Shift"
+              value={guard.shift || "Not assigned"}
+            />
+
+            <DetailRow
+              icon={<CalendarCheck className="text-purple-600" />}
+              label="Duty Time"
+              value={guard.dutyTime || "Not assigned"}
+            />
+
+            <DetailRow
+              icon={<Shield className="text-orange-600" />}
+              label="Weapon Type"
+              value={guard.weaponType || "Not assigned"}
+            />
+
+            <DetailRow
+              icon={<BadgeCheck className="text-red-600" />}
+              label="License No"
+              value={
+                guard.licenseNumber || guard.weaponNumber || "Not assigned"
+              }
+            />
           </div>
         </div>
 
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
-          <h2 className="text-2xl font-bold text-gray-800 mb-5">Mark Attendance</h2>
+          <h2 className="text-2xl font-bold text-gray-800 mb-5">
+            Mark Attendance
+          </h2>
 
           <p className="text-gray-500 mb-6">
             Guard can mark attendance only once per day.
