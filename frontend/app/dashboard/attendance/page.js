@@ -11,6 +11,11 @@ import {
   AlertTriangle,
   X,
 } from "lucide-react";
+import {
+  fetchGuards,
+  fetchAttendance,
+  upsertAttendance,
+} from "../../../services/dataService";
 
 export default function AttendancePage() {
   const [guards, setGuards] = useState([]);
@@ -26,15 +31,27 @@ export default function AttendancePage() {
 
   const today = new Date().toISOString().split("T")[0];
 
-  const loadData = () => {
+  const getId = (item) => item?._id || item?.id;
+
+  const showMessage = (text) => {
+    setMessage(text);
+    setTimeout(() => setMessage(""), 3000);
+  };
+
+  const loadData = async () => {
     try {
       setLoading(true);
-      setGuards(JSON.parse(localStorage.getItem("guards")) || []);
-      setAttendanceRecords(
-        JSON.parse(localStorage.getItem("attendanceRecords")) || []
-      );
-    } catch {
-      setMessage("Failed to load attendance data");
+
+      const [guardsData, attendanceData] = await Promise.all([
+        fetchGuards(),
+        fetchAttendance(),
+      ]);
+
+      setGuards(guardsData || []);
+      setAttendanceRecords(attendanceData || []);
+    } catch (error) {
+      console.error(error);
+      showMessage(error?.response?.data?.message || "Failed to load attendance data");
     } finally {
       setLoading(false);
     }
@@ -42,24 +59,12 @@ export default function AttendancePage() {
 
   useEffect(() => {
     loadData();
-    window.addEventListener("attendance-updated", loadData);
-    window.addEventListener("guards-updated", loadData);
-    window.addEventListener("storage", loadData);
-
-    return () => {
-      window.removeEventListener("attendance-updated", loadData);
-      window.removeEventListener("guards-updated", loadData);
-      window.removeEventListener("storage", loadData);
-    };
   }, []);
 
-  const showMessage = (text) => {
-    setMessage(text);
-    setTimeout(() => setMessage(""), 2500);
-  };
+  const activeGuards = guards.filter((guard) => guard.status === "Active");
 
   const getGuardById = (guardId) =>
-    guards.find((guard) => String(guard.id) === String(guardId));
+    guards.find((guard) => String(getId(guard)) === String(guardId));
 
   const getWeaponType = (record, guard) =>
     record?.weaponType || guard?.weaponType || "N/A";
@@ -105,7 +110,7 @@ export default function AttendancePage() {
     (record) => record.status === "Late"
   ).length;
 
-  const absentToday = Math.max(guards.length - todayAttendance.length, 0);
+  const absentToday = Math.max(activeGuards.length - todayAttendance.length, 0);
 
   const getGuardHistory = (guardId) => {
     return attendanceRecords
@@ -115,80 +120,100 @@ export default function AttendancePage() {
         const sameDate = historyDate ? record.date === historyDate : true;
         return sameGuard && sameMonth && sameDate;
       })
-      .sort((a, b) => b.date.localeCompare(a.date));
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   };
 
-  const saveAttendance = (updatedRecords) => {
-    localStorage.setItem("attendanceRecords", JSON.stringify(updatedRecords));
-    setAttendanceRecords(updatedRecords);
-    window.dispatchEvent(new Event("attendance-updated"));
-  };
+  const handleStatusUpdate = async (
+    guard,
+    record,
+    newStatus,
+    selectedDate = today
+  ) => {
+    if (selectedDate > today) {
+      showMessage("Future date attendance is not allowed");
+      return;
+    }
 
-  const handleStatusUpdate = (guard, record, newStatus, selectedDate = today) => {
-    if (!guard?.id && !record?.guardId) {
+    const guardId = getId(guard) || record?.guardId;
+
+    if (!guardId) {
       showMessage("Guard not found");
       return;
     }
 
-    const guardId = guard?.id || record.guardId;
+    const selectedGuardData = guard || getGuardById(guardId);
 
-    const existingRecord = attendanceRecords.find(
-      (item) =>
-        String(item.guardId) === String(guardId) && item.date === selectedDate
-    );
-
-    let updatedRecords;
-
-    if (existingRecord) {
-      updatedRecords = attendanceRecords.map((item) =>
-        item.id === existingRecord.id
-          ? {
-              ...item,
-              status: newStatus,
-              markedBy: "Admin",
-              time:
-                item.time ||
-                new Date().toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                }),
-            }
-          : item
-      );
-    } else {
-      const newRecord = {
-        id: Date.now(),
-        guardId: guard.id,
-        guardName: guard.name,
-        fatherName: guard.fatherName,
-        cnic: guard.cnic,
-        dutyPoint: guard.dutyLocation,
-        weaponType: guard.weaponType,
-        licenseNumber: guard.licenseNumber || guard.weaponNumber,
-        status: newStatus,
-        date: selectedDate,
-        time: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        markedBy: "Admin",
-      };
-
-      updatedRecords = [newRecord, ...attendanceRecords];
+    if (selectedGuardData?.status && selectedGuardData.status !== "Active") {
+      showMessage("Only active guards can be marked for attendance");
+      return;
     }
 
-    saveAttendance(updatedRecords);
-    showMessage(`Attendance marked ${newStatus} ✅`);
+    const time =
+      record?.time ||
+      new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+    try {
+      const saved = await upsertAttendance({
+        guardId,
+        guardName: selectedGuardData?.name || record?.guardName || "",
+        fatherName: selectedGuardData?.fatherName || record?.fatherName || "",
+        cnic: selectedGuardData?.cnic || record?.cnic || "",
+        dutyPoint:
+          selectedGuardData?.dutyLocation ||
+          record?.dutyPoint ||
+          record?.dutyLocation ||
+          "",
+        weaponType: selectedGuardData?.weaponType || record?.weaponType || "",
+        licenseNumber:
+          selectedGuardData?.licenseNumber ||
+          selectedGuardData?.weaponNumber ||
+          record?.licenseNumber ||
+          record?.weaponNumber ||
+          "",
+        status: newStatus,
+        date: selectedDate,
+        time,
+        markedBy: "Admin",
+      });
+
+      setAttendanceRecords((prev) => {
+        const exists = prev.find(
+          (item) =>
+            String(item.guardId) === String(guardId) &&
+            item.date === selectedDate
+        );
+
+        if (exists) {
+          return prev.map((item) =>
+            String(item.guardId) === String(guardId) &&
+            item.date === selectedDate
+              ? saved
+              : item
+          );
+        }
+
+        return [saved, ...prev];
+      });
+
+      showMessage(`Attendance marked ${newStatus} ✅`);
+      window.dispatchEvent(new Event("attendance-updated"));
+    } catch (error) {
+      console.error(error);
+      showMessage(error?.response?.data?.message || "Failed to update attendance");
+    }
   };
 
-  const handleRefresh = () => {
-    loadData();
+  const handleRefresh = async () => {
+    await loadData();
     showMessage("Attendance refreshed successfully ✅");
   };
 
   const openGuardHistory = (guard, record = {}) => {
     setSelectedGuard({
-      guardId: guard?.id || record.guardId,
+      guardId: getId(guard) || record.guardId,
       guardName: record.guardName || guard?.name,
       fatherName: record.fatherName || guard?.fatherName,
       dutyPoint: getDutyPoint(record, guard),
@@ -226,10 +251,34 @@ export default function AttendancePage() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-        <StatCard title="Total Guards" value={guards.length} icon={CalendarCheck} color="text-blue-600" bg="bg-blue-100" />
-        <StatCard title="Present Today" value={presentToday} icon={CheckCircle2} color="text-green-600" bg="bg-green-100" />
-        <StatCard title="Absent Today" value={absentToday} icon={XCircle} color="text-red-600" bg="bg-red-100" />
-        <StatCard title="Late Today" value={lateToday} icon={AlertTriangle} color="text-yellow-600" bg="bg-yellow-100" />
+        <StatCard
+          title="Total Active Guards"
+          value={activeGuards.length}
+          icon={CalendarCheck}
+          color="text-blue-600"
+          bg="bg-blue-100"
+        />
+        <StatCard
+          title="Present Today"
+          value={presentToday}
+          icon={CheckCircle2}
+          color="text-green-600"
+          bg="bg-green-100"
+        />
+        <StatCard
+          title="Absent Today"
+          value={absentToday}
+          icon={XCircle}
+          color="text-red-600"
+          bg="bg-red-100"
+        />
+        <StatCard
+          title="Late Today"
+          value={lateToday}
+          icon={AlertTriangle}
+          color="text-yellow-600"
+          bg="bg-yellow-100"
+        />
       </div>
 
       <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
@@ -237,7 +286,7 @@ export default function AttendancePage() {
           <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
           <input
             type="text"
-            placeholder="Search all guards by name, CNIC, weapon name, license number or duty point..."
+            placeholder="Search all guards by name, CNIC, weapon type, license number or duty point..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-blue-500"
@@ -265,9 +314,9 @@ export default function AttendancePage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-h-[620px] overflow-y-auto">
           <table className="w-full min-w-[1250px]">
-            <thead className="bg-gradient-to-r from-[#071739] to-[#0A1F4D] text-white">
+            <thead className="bg-gradient-to-r from-[#071739] to-[#0A1F4D] text-white sticky top-0 z-10">
               <tr>
                 <th className="text-left px-6 py-4 whitespace-nowrap">Guard Name</th>
                 <th className="text-left px-6 py-4 whitespace-nowrap">Father Name</th>
@@ -289,23 +338,43 @@ export default function AttendancePage() {
                 </tr>
               ) : search.trim() && searchedGuards.length > 0 ? (
                 searchedGuards.map((guard) => {
+                  const guardId = getId(guard);
                   const todayRecord = todayAttendance.find(
-                    (item) => String(item.guardId) === String(guard.id)
+                    (item) => String(item.guardId) === String(guardId)
                   );
 
                   return (
-                    <tr key={guard.id} className="border-b border-gray-100 hover:bg-blue-50/40 transition">
-                      <td className="px-6 py-5 font-semibold text-gray-800 whitespace-nowrap">{guard.name || "N/A"}</td>
-                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{guard.fatherName || "N/A"}</td>
-                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{guard.dutyLocation || "N/A"}</td>
-                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{guard.weaponType || "N/A"}</td>
-                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{guard.licenseNumber || guard.weaponNumber || "N/A"}</td>
+                    <tr
+                      key={guardId}
+                      className="border-b border-gray-100 hover:bg-blue-50/40 transition"
+                    >
+                      <td className="px-6 py-5 font-semibold text-gray-800 whitespace-nowrap">
+                        {guard.name || "N/A"}
+                      </td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {guard.fatherName || "N/A"}
+                      </td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {guard.dutyLocation || "N/A"}
+                      </td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {guard.weaponType || "N/A"}
+                      </td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {guard.licenseNumber || guard.weaponNumber || "N/A"}
+                      </td>
 
                       <td className="px-6 py-5 whitespace-nowrap">
                         <select
                           value={todayRecord?.status || "Present"}
+                          disabled={guard.status !== "Active"}
                           onChange={(e) =>
-                            handleStatusUpdate(guard, todayRecord || {}, e.target.value, today)
+                            handleStatusUpdate(
+                              guard,
+                              todayRecord || {},
+                              e.target.value,
+                              today
+                            )
                           }
                           className={`px-3 py-2 rounded-xl text-xs font-semibold outline-none ${
                             todayRecord?.status === "Absent"
@@ -353,16 +422,30 @@ export default function AttendancePage() {
                   const guard = getGuardById(record.guardId);
 
                   return (
-                    <tr key={record.id} className="border-b border-gray-100 hover:bg-blue-50/40 transition">
-                      <td className="px-6 py-5 font-semibold text-gray-800 whitespace-nowrap">{record.guardName || guard?.name || "N/A"}</td>
-                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{record.fatherName || guard?.fatherName || "N/A"}</td>
-                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{getDutyPoint(record, guard)}</td>
-                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{getWeaponType(record, guard)}</td>
-                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{getLicenseNumber(record, guard)}</td>
+                    <tr
+                      key={record._id || record.id}
+                      className="border-b border-gray-100 hover:bg-blue-50/40 transition"
+                    >
+                      <td className="px-6 py-5 font-semibold text-gray-800 whitespace-nowrap">
+                        {record.guardName || guard?.name || "N/A"}
+                      </td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {record.fatherName || guard?.fatherName || "N/A"}
+                      </td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {getDutyPoint(record, guard)}
+                      </td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {getWeaponType(record, guard)}
+                      </td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {getLicenseNumber(record, guard)}
+                      </td>
 
                       <td className="px-6 py-5 whitespace-nowrap">
                         <select
                           value={record.status || "Present"}
+                          disabled={guard?.status && guard.status !== "Active"}
                           onChange={(e) =>
                             handleStatusUpdate(guard, record, e.target.value, record.date)
                           }
@@ -380,7 +463,9 @@ export default function AttendancePage() {
                         </select>
                       </td>
 
-                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{record.time || "N/A"}</td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {record.time || "N/A"}
+                      </td>
 
                       <td className="px-6 py-5 text-center">
                         <button
@@ -407,6 +492,7 @@ export default function AttendancePage() {
           setHistoryMonth={setHistoryMonth}
           historyDate={historyDate}
           setHistoryDate={setHistoryDate}
+          today={today}
           getDutyPoint={getDutyPoint}
           getWeaponType={getWeaponType}
           getLicenseNumber={getLicenseNumber}
@@ -425,6 +511,7 @@ function HistoryModal({
   setHistoryMonth,
   historyDate,
   setHistoryDate,
+  today,
   getDutyPoint,
   getWeaponType,
   getLicenseNumber,
@@ -462,6 +549,7 @@ function HistoryModal({
 
             <input
               type="date"
+              max={today}
               value={historyDate}
               onChange={(e) => setHistoryDate(e.target.value)}
               className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 outline-none focus:border-blue-500"
@@ -498,18 +586,36 @@ function HistoryModal({
                   </tr>
                 ) : (
                   history.map((item) => (
-                    <tr key={item.id} className="border-b border-gray-100 hover:bg-blue-50/40">
-                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{item.date}</td>
-                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{item.time || "N/A"}</td>
-                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{getDutyPoint(item, guardData)}</td>
-                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{getWeaponType(item, guardData)}</td>
-                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">{getLicenseNumber(item, guardData)}</td>
+                    <tr
+                      key={item._id || item.id}
+                      className="border-b border-gray-100 hover:bg-blue-50/40"
+                    >
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {item.date}
+                      </td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {item.time || "N/A"}
+                      </td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {getDutyPoint(item, guardData)}
+                      </td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {getWeaponType(item, guardData)}
+                      </td>
+                      <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
+                        {getLicenseNumber(item, guardData)}
+                      </td>
 
                       <td className="px-6 py-5 whitespace-nowrap">
                         <select
                           value={item.status || "Present"}
                           onChange={(e) =>
-                            onStatusUpdate(guardData, item, e.target.value, item.date)
+                            onStatusUpdate(
+                              guardData,
+                              item,
+                              e.target.value,
+                              item.date
+                            )
                           }
                           className={`px-3 py-2 rounded-xl text-xs font-semibold outline-none ${
                             item.status === "Absent"
@@ -526,7 +632,7 @@ function HistoryModal({
                       </td>
 
                       <td className="px-6 py-5 text-gray-700 whitespace-nowrap">
-                        {item.markedBy || "Guard"}
+                        {item.markedBy || "Admin"}
                       </td>
                     </tr>
                   ))

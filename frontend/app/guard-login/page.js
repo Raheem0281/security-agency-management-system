@@ -2,49 +2,60 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { loginGuard } from "../../services/dataService";
 
 export default function GuardLoginPage() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleGuardLogin = () => {
-    if (!email || !password) {
+  const handleGuardLogin = async () => {
+    if (!email.trim() || !password.trim()) {
       alert("Please enter email and password");
       return;
     }
 
-    const savedGuards = localStorage.getItem("guards");
-    const guards = savedGuards ? JSON.parse(savedGuards) : [];
+    try {
+      setLoading(true);
 
-    const matchedGuard = guards.find(
-      (guard) =>
-        guard.email === email &&
-        guard.password === password &&
-        guard.status === "Active"
-    );
+      const result = await loginGuard(
+        email.trim().toLowerCase(),
+        password
+      );
 
-    if (!matchedGuard) {
-      alert("Invalid guard email/password or guard is inactive");
-      return;
+      const guard = result.guard;
+      const role = result.role || "guard";
+      const token = result.token || result.guard?.token;
+
+      if (token) {
+        localStorage.setItem("token", token);
+      } else {
+        localStorage.setItem("token", "guard-session");
+      }
+
+      localStorage.setItem(
+        "user",
+        JSON.stringify({
+          role,
+          ...guard,
+        })
+      );
+
+      router.push("/user-dashboard");
+    } catch (error) {
+      alert(
+        error?.response?.data?.message ||
+          "Invalid guard email/password or guard is inactive"
+      );
+    } finally {
+      setLoading(false);
     }
-
-    localStorage.setItem("token", "guard-token");
-
-    localStorage.setItem(
-      "user",
-      JSON.stringify({
-        role: "guard",
-        ...matchedGuard,
-      })
-    );
-
-    router.push("/user-dashboard");
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F4F7FE]">
+    <div className="min-h-screen flex items-center justify-center bg-[#F4F7FE] px-4">
       <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md">
         <h1 className="text-3xl font-bold text-center text-gray-800">
           Guard Login
@@ -72,9 +83,10 @@ export default function GuardLoginPage() {
 
         <button
           onClick={handleGuardLogin}
-          className="w-full bg-[#071739] hover:bg-[#0A1F4D] text-white py-3 rounded-2xl font-bold transition"
+          disabled={loading}
+          className="w-full bg-[#071739] hover:bg-[#0A1F4D] text-white py-3 rounded-2xl font-bold transition disabled:opacity-60"
         >
-          Login
+          {loading ? "Logging in..." : "Login"}
         </button>
       </div>
     </div>

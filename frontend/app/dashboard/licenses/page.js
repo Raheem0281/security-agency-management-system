@@ -13,6 +13,12 @@ import {
   Eye,
   X,
 } from "lucide-react";
+import {
+  fetchLicenses,
+  createLicense,
+  updateLicense,
+  deleteLicense,
+} from "../../../services/dataService";
 
 const emptyLicense = {
   weaponType: "",
@@ -30,33 +36,30 @@ export default function LicensesPage() {
   const [editLicense, setEditLicense] = useState(null);
   const [newLicense, setNewLicense] = useState(emptyLicense);
   const [message, setMessage] = useState("");
-
-  const loadData = () => {
+  const [loading, setLoading] = useState(false);
+   const loadData = async () => {
     try {
-      const saved = JSON.parse(localStorage.getItem("licenses")) || [];
-      setLicenses(saved);
-    } catch {
+      setLoading(true);
+
+      const data = await fetchLicenses();
+
+      setLicenses(data || []);
+    } catch (error) {
+      console.error(error);
+
       setLicenses([]);
+
+      showMessage(
+        error?.response?.data?.message || "Failed to load licenses"
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
     loadData();
-
-    window.addEventListener("licenses-updated", loadData);
-    window.addEventListener("storage", loadData);
-
-    return () => {
-      window.removeEventListener("licenses-updated", loadData);
-      window.removeEventListener("storage", loadData);
-    };
   }, []);
-
-  const saveLicenses = (updatedLicenses) => {
-    setLicenses(updatedLicenses);
-    localStorage.setItem("licenses", JSON.stringify(updatedLicenses));
-    window.dispatchEvent(new Event("licenses-updated"));
-  };
 
   const showMessage = (text) => {
     setMessage(text);
@@ -95,66 +98,116 @@ export default function LicensesPage() {
   ).length;
 
   const validateLicense = (license) => {
-    return (
-      license.weaponType &&
-      license.licenseNumber &&
-      license.validityArea &&
-      license.issueDate &&
-      license.expiryDate
+    if (
+      !license.weaponType ||
+      !license.licenseNumber ||
+      !license.validityArea ||
+      !license.issueDate ||
+      !license.expiryDate
+    ) {
+      return "Please fill all required fields";
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+
+    if (license.issueDate > today) {
+      return "Issue Date cannot be in future";
+    }
+
+    if (license.expiryDate <= license.issueDate) {
+      return "Expiry Date must be after Issue Date";
+    }
+
+    const duplicate = licenses.find(
+      (item) =>
+        item.licenseNumber === license.licenseNumber &&
+        String(item._id || item.id) !== String(license._id || license.id)
     );
+
+    if (duplicate) {
+      return "License Number already exists";
+    }
+
+    return null;
   };
 
-  const handleAddLicense = () => {
-    if (!validateLicense(newLicense)) {
-      showMessage("Please fill all required fields");
+  const handleAddLicense = async () => {
+    const error = validateLicense(newLicense);
+
+    if (error) {
+      showMessage(error);
       return;
     }
 
-    const newItem = {
-      id: Date.now(),
-      ...newLicense,
-      status: getLicenseStatus(newLicense.expiryDate),
-      createdAt: new Date().toISOString(),
-    };
+    try {
+      const newItem = await createLicense(newLicense);
 
-    const updated = [newItem, ...licenses];
+      setLicenses([newItem, ...licenses]);
 
-    saveLicenses(updated);
-    setNewLicense(emptyLicense);
-    setShowAddModal(false);
-    showMessage("License added successfully ✅");
+      setNewLicense(emptyLicense);
+
+      setShowAddModal(false);
+
+      showMessage("License added successfully ✅");
+
+      window.dispatchEvent(new Event("licenses-updated"));
+    } catch (error) {
+      console.error(error);
+
+      showMessage(
+        error?.response?.data?.message || "Failed to add license"
+      );
+    }
   };
 
-  const handleUpdateLicense = () => {
-    if (!editLicense || !validateLicense(editLicense)) {
-      showMessage("Please fill all required fields");
+  const handleUpdateLicense = async () => {
+    const error = validateLicense(editLicense);
+
+    if (error) {
+      showMessage(error);
       return;
     }
 
-    const updated = licenses.map((license) =>
-      String(license.id) === String(editLicense.id)
-        ? {
-            ...editLicense,
-            status: getLicenseStatus(editLicense.expiryDate),
-            updatedAt: new Date().toISOString(),
-          }
-        : license
-    );
+    try {
+      const id = editLicense._id || editLicense.id;
 
-    saveLicenses(updated);
-    setEditLicense(null);
-    showMessage("License updated successfully ✅");
+      const updated = await updateLicense(id, editLicense);
+
+      setLicenses(
+        licenses.map((license) =>
+          String(license._id || license.id) === String(id)
+            ? updated
+            : license
+        )
+      );
+
+      setEditLicense(null);
+
+      showMessage("License updated successfully ✅");
+
+      window.dispatchEvent(new Event("licenses-updated"));
+    } catch (error) {
+      console.error(error);
+
+      showMessage(
+        error?.response?.data?.message || "Failed to update license"
+      );
+    }
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (!confirm("Delete this license?")) return;
 
-    const updated = licenses.filter(
-      (license) => String(license.id) !== String(id)
-    );
-
-    saveLicenses(updated);
-    showMessage("License deleted successfully");
+    try {
+      await deleteLicense(id);
+      setLicenses(
+        licenses.filter((license) => String(license._id || license.id) !== String(id))
+      );
+      showMessage("License deleted successfully");
+      window.dispatchEvent(new Event("licenses-updated"));
+    } catch (error) {
+      showMessage(error.response?.data?.message || "Failed to delete license");
+    }
   };
 
   return (
@@ -282,7 +335,7 @@ export default function LicensesPage() {
 
                   return (
                     <tr
-                      key={license.id}
+                      key={license._id || license.id}
                       className="border-b border-gray-100 hover:bg-blue-50/40 transition"
                     >
                       <td className="px-5 py-4 text-gray-700 whitespace-nowrap">
@@ -342,7 +395,7 @@ export default function LicensesPage() {
                           </button>
 
                           <button
-                            onClick={() => handleDelete(license.id)}
+                            onClick={() => handleDelete(license._id || license.id)}
                             className="w-10 h-10 rounded-xl bg-red-100 hover:bg-red-200 inline-flex items-center justify-center transition"
                             title="Delete"
                           >

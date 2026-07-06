@@ -8,7 +8,14 @@ import {
   ClipboardList,
   Wallet,
   FileText,
+  RefreshCcw,
 } from "lucide-react";
+import {
+  fetchGuards,
+  fetchClients,
+  fetchAttendance,
+  fetchPayroll,
+} from "../../services/dataService";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -17,47 +24,91 @@ export default function DashboardPage() {
   const [clients, setClients] = useState([]);
   const [attendance, setAttendance] = useState([]);
   const [payroll, setPayroll] = useState([]);
-  const [activities, setActivities] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
 
-  const loadDashboardData = () => {
-    setGuards(JSON.parse(localStorage.getItem("guards")) || []);
-    setClients(JSON.parse(localStorage.getItem("clients")) || []);
-    setAttendance(JSON.parse(localStorage.getItem("attendanceRecords")) || []);
-    setPayroll(JSON.parse(localStorage.getItem("payrollRecords")) || []);
-    setActivities(JSON.parse(localStorage.getItem("recentActivities")) || []);
+  const showMessage = (text) => {
+    setMessage(text);
+    setTimeout(() => setMessage(""), 3000);
+  };
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+
+      const [guardsData, clientsData, attendanceData, payrollData] =
+        await Promise.all([
+          fetchGuards(),
+          fetchClients(),
+          fetchAttendance(),
+          fetchPayroll(),
+        ]);
+
+      setGuards(guardsData || []);
+      setClients(clientsData || []);
+      setAttendance(attendanceData || []);
+      setPayroll(payrollData || []);
+    } catch (error) {
+      console.error(error);
+      showMessage(
+        error?.response?.data?.message || "Failed to load dashboard data"
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     loadDashboardData();
-
-    window.addEventListener("storage", loadDashboardData);
-    window.addEventListener("attendance-updated", loadDashboardData);
-    window.addEventListener("activities-updated", loadDashboardData);
-    window.addEventListener("payroll-updated", loadDashboardData);
-    window.addEventListener("clients-updated", loadDashboardData);
-    window.addEventListener("guards-updated", loadDashboardData);
-
-    return () => {
-      window.removeEventListener("storage", loadDashboardData);
-      window.removeEventListener("attendance-updated", loadDashboardData);
-      window.removeEventListener("activities-updated", loadDashboardData);
-      window.removeEventListener("payroll-updated", loadDashboardData);
-      window.removeEventListener("clients-updated", loadDashboardData);
-      window.removeEventListener("guards-updated", loadDashboardData);
-    };
   }, []);
-
-  const totalPayroll = useMemo(() => {
-    return payroll.reduce((sum, item) => {
-      return sum + Number(item.finalSalary || 0);
-    }, 0);
-  }, [payroll]);
 
   const today = new Date().toISOString().split("T")[0];
 
-  const todayAttendance = attendance.filter(
-    (item) => item.date === today && item.status === "Present"
-  );
+  const activeGuards = guards.filter((g) => g.status === "Active");
+  const todayAttendance = attendance.filter((item) => item.date === today);
+
+  const presentToday = todayAttendance.filter(
+    (item) => item.status === "Present"
+  ).length;
+
+  const absentToday = Math.max(activeGuards.length - todayAttendance.length, 0);
+
+  const lateToday = todayAttendance.filter(
+    (item) => item.status === "Late"
+  ).length;
+
+  const totalPayroll = useMemo(() => {
+    return payroll.reduce(
+      (sum, item) => sum + Number(item.finalSalary || 0),
+      0
+    );
+  }, [payroll]);
+
+  const recentHistory = useMemo(() => {
+    return [
+      ...guards.slice(0, 3).map((g) => ({
+        id: `guard-${g._id || g.id}`,
+        title: "Guard Record",
+        message: `${g.name || "Guard"} is registered in system`,
+        date: String(g.createdAt || "").slice(0, 10) || "N/A",
+        time: "",
+      })),
+      ...attendance.slice(0, 3).map((a) => ({
+        id: `attendance-${a._id || a.id}`,
+        title: "Attendance Marked",
+        message: `${a.guardName || "Guard"} marked ${a.status || "Present"}`,
+        date: a.date || "N/A",
+        time: a.time || "",
+      })),
+      ...payroll.slice(0, 3).map((p) => ({
+        id: `payroll-${p._id || p.id}`,
+        title: "Payroll Generated",
+        message: `${p.guardName || "Guard"} payroll for ${p.month}`,
+        date: String(p.createdAt || p.generatedAt || "").slice(0, 10) || "N/A",
+        time: "",
+      })),
+    ].slice(0, 5);
+  }, [guards, attendance, payroll]);
 
   const stats = [
     {
@@ -74,7 +125,7 @@ export default function DashboardPage() {
     },
     {
       title: "Today Present",
-      value: todayAttendance.length,
+      value: presentToday,
       icon: ClipboardList,
       path: "/dashboard/attendance",
     },
@@ -106,14 +157,36 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => router.push("/dashboard/reports")}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-2xl shadow-lg flex items-center gap-2 transition"
-        >
-          <FileText size={20} />
-          Generate Report
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={loadDashboardData}
+            className="bg-white border border-gray-200 px-6 py-3 rounded-2xl shadow-sm flex items-center gap-2 transition"
+          >
+            <RefreshCcw size={20} />
+            Refresh
+          </button>
+
+          <button
+            onClick={() => router.push("/dashboard/reports")}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-2xl shadow-lg flex items-center gap-2 transition"
+          >
+            <FileText size={20} />
+            Generate Report
+          </button>
+        </div>
       </div>
+
+      {message && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-5 py-4 rounded-2xl font-medium">
+          {message}
+        </div>
+      )}
+
+      {loading && (
+        <div className="bg-white rounded-2xl p-4 text-gray-500 border border-gray-100">
+          Loading dashboard data...
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         {stats.map((item) => {
@@ -154,13 +227,13 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          {activities.length === 0 ? (
+          {recentHistory.length === 0 ? (
             <div className="text-gray-500 bg-gray-50 rounded-2xl p-5">
               No recent activity yet.
             </div>
           ) : (
             <div className="space-y-3 max-h-[420px] overflow-hidden">
-              {activities.slice(0, 3).map((activity) => (
+              {recentHistory.map((activity) => (
                 <div
                   key={activity.id}
                   className="flex items-center justify-between border-b border-gray-200 pb-4"
@@ -201,6 +274,18 @@ export default function DashboardPage() {
                 {action.title}
               </button>
             ))}
+          </div>
+
+          <div className="mt-6 bg-gray-50 rounded-2xl p-4 text-sm text-gray-600">
+            <p>
+              Present: <b>{presentToday}</b>
+            </p>
+            <p>
+              Absent: <b>{absentToday}</b>
+            </p>
+            <p>
+              Late: <b>{lateToday}</b>
+            </p>
           </div>
         </div>
       </div>

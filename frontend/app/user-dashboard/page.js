@@ -13,166 +13,181 @@ import {
   BadgeCheck,
   Shield,
 } from "lucide-react";
+import {
+  fetchGuards,
+  fetchAttendance,
+  upsertAttendance,
+  createNotification,
+} from "../../services/dataService";
 
 export default function UserDashboard() {
   const router = useRouter();
 
   const [guard, setGuard] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [attendanceMarked, setAttendanceMarked] = useState(false);
   const [attendanceTime, setAttendanceTime] = useState("");
+  const [message, setMessage] = useState("");
+
+  const getId = (item) => item?._id || item?.id;
+
+  const today = new Date().toISOString().split("T")[0];
+
+  const showMessage = (text) => {
+    setMessage(text);
+    setTimeout(() => setMessage(""), 3000);
+  };
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    const user = localStorage.getItem("user");
+    const loadGuardData = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const user = localStorage.getItem("user");
 
-    if (!token || !user) {
-      router.replace("/guard-login");
-      return;
-    }
+        if (!token || !user) {
+          router.replace("/guard-login");
+          return;
+        }
 
-    const parsedUser = JSON.parse(user);
+        const parsedUser = JSON.parse(user);
 
-    if (parsedUser.role !== "guard") {
-      router.replace("/guard-login");
-      return;
-    }
+        if (parsedUser.role !== "guard") {
+          router.replace("/guard-login");
+          return;
+        }
 
-    const allGuards = JSON.parse(localStorage.getItem("guards")) || [];
+        const parsedUserId = getId(parsedUser);
 
-    const latestGuard =
-      allGuards.find((g) => String(g.id) === String(parsedUser.id)) ||
-      parsedUser;
+        const allGuards = await fetchGuards();
 
-    const updatedGuard = {
-      ...parsedUser,
-      ...latestGuard,
-      role: "guard",
+        const latestGuard =
+          allGuards.find(
+            (g) => String(getId(g)) === String(parsedUserId)
+          ) || parsedUser;
+
+        const updatedGuard = {
+          ...parsedUser,
+          ...latestGuard,
+          role: "guard",
+        };
+
+        const guardId = getId(updatedGuard);
+
+        localStorage.setItem("user", JSON.stringify(updatedGuard));
+        setGuard(updatedGuard);
+
+        const records = await fetchAttendance({
+          guardId,
+          date: today,
+        });
+
+        const alreadyMarked = records.find(
+          (record) =>
+            String(record.guardId) === String(guardId) &&
+            record.date === today &&
+            record.status === "Present"
+        );
+
+        if (alreadyMarked) {
+          setAttendanceMarked(true);
+          setAttendanceTime(alreadyMarked.time || "");
+        }
+      } catch (error) {
+        console.error(error);
+        showMessage("Failed to load guard dashboard");
+      } finally {
+        setLoading(false);
+      }
     };
 
-    localStorage.setItem("user", JSON.stringify(updatedGuard));
-    setGuard(updatedGuard);
+    loadGuardData();
+  }, [router, today]);
 
-    const todayDate = new Date().toISOString().split("T")[0];
-    const records = JSON.parse(localStorage.getItem("attendanceRecords")) || [];
-
-    const alreadyMarked = records.find(
-      (record) =>
-        String(record.guardId) === String(updatedGuard.id) &&
-        record.date === todayDate &&
-        record.status === "Present"
-    );
-
-    if (alreadyMarked) {
-      setAttendanceMarked(true);
-      setAttendanceTime(alreadyMarked.time);
-    }
-  }, [router]);
-
-  const handleAttendance = () => {
+  const handleAttendance = async () => {
     if (!guard) return;
 
+    const guardId = getId(guard);
+
+    if (!guardId) {
+      alert("Guard record not found");
+      return;
+    }
+
+    if (guard.status && guard.status !== "Active") {
+      alert("Only active guards can mark attendance");
+      return;
+    }
+
     const now = new Date();
+
     const date = now.toISOString().split("T")[0];
+
+    if (date > today) {
+      alert("Future date attendance is not allowed");
+      return;
+    }
+
     const time = now.toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
     });
 
-    const records = JSON.parse(localStorage.getItem("attendanceRecords")) || [];
+    try {
+      const records = await fetchAttendance({
+        guardId,
+        date,
+      });
 
-    const existingRecord = records.find(
-      (record) =>
-        String(record.guardId) === String(guard.id) && record.date === date
-    );
-
-    if (existingRecord?.status === "Present") {
-      alert("Attendance already marked today ✅");
-      return;
-    }
-
-    let updatedRecords;
-
-    if (existingRecord) {
-      updatedRecords = records.map((record) =>
-        record.id === existingRecord.id
-          ? {
-              ...record,
-              guardName: guard.name,
-              fatherName: guard.fatherName,
-              dutyLocation: guard.dutyLocation,
-              weaponType: guard.weaponType,
-              licenseNumber: guard.licenseNumber || guard.weaponNumber,
-              status: "Present",
-              time,
-              markedBy: "Guard",
-            }
-          : record
+      const existingRecord = records.find(
+        (record) =>
+          String(record.guardId) === String(guardId) &&
+          record.date === date
       );
-    } else {
-      const newRecord = {
-        id: Date.now(),
-        guardId: guard.id,
-        guardName: guard.name,
-        fatherName: guard.fatherName,
-        cnic: guard.cnic,
-        dutyLocation: guard.dutyLocation,
-        weaponType: guard.weaponType,
-        licenseNumber: guard.licenseNumber || guard.weaponNumber,
+
+      if (existingRecord?.status === "Present") {
+        alert("Attendance already marked today ✅");
+        setAttendanceMarked(true);
+        setAttendanceTime(existingRecord.time || time);
+        return;
+      }
+
+      await upsertAttendance({
+        guardId,
+        guardName: guard.name || "",
+        fatherName: guard.fatherName || "",
+        cnic: guard.cnic || "",
+        dutyPoint: guard.dutyLocation || "",
+        weaponType: guard.weaponType || "",
+        licenseNumber: guard.licenseNumber || guard.weaponNumber || "",
         status: "Present",
         date,
         time,
         markedBy: "Guard",
-      };
+      });
 
-      updatedRecords = [newRecord, ...records];
+      try {
+        await createNotification({
+          title: "Guard Attendance Marked",
+          message: `${guard.name} marked attendance at ${
+            guard.dutyLocation || "duty point"
+          }`,
+          type: "attendance",
+        });
+      } catch (error) {
+        console.warn("Notification skipped:", error);
+      }
+
+      window.dispatchEvent(new Event("attendance-updated"));
+      window.dispatchEvent(new Event("notifications-updated"));
+
+      setAttendanceMarked(true);
+      setAttendanceTime(time);
+
+      alert("Attendance marked successfully ✅");
+    } catch (error) {
+      console.error(error);
+      alert(error?.response?.data?.message || "Failed to mark attendance");
     }
-
-    localStorage.setItem("attendanceRecords", JSON.stringify(updatedRecords));
-    window.dispatchEvent(new Event("attendance-updated"));
-
-    const notification = {
-      id: Date.now(),
-      title: "Guard Attendance Marked",
-      message: `${guard.name} marked attendance at ${
-        guard.dutyLocation || "duty point"
-      }`,
-      time,
-      date,
-      type: "attendance",
-    };
-
-    const oldNotifications =
-      JSON.parse(localStorage.getItem("adminNotifications")) || [];
-
-    localStorage.setItem(
-      "adminNotifications",
-      JSON.stringify([notification, ...oldNotifications])
-    );
-
-    window.dispatchEvent(new Event("notifications-updated"));
-
-    const activity = {
-      id: Date.now() + 1,
-      title: "Attendance Marked",
-      message: `${guard.name} reached ${guard.dutyLocation || "duty point"}`,
-      time,
-      date,
-    };
-
-    const oldActivities =
-      JSON.parse(localStorage.getItem("recentActivities")) || [];
-
-    localStorage.setItem(
-      "recentActivities",
-      JSON.stringify([activity, ...oldActivities])
-    );
-
-    window.dispatchEvent(new Event("activities-updated"));
-
-    setAttendanceMarked(true);
-    setAttendanceTime(time);
-
-    alert("Attendance marked successfully ✅");
   };
 
   const handleLogout = () => {
@@ -181,7 +196,7 @@ export default function UserDashboard() {
     router.replace("/guard-login");
   };
 
-  if (!guard) {
+  if (loading || !guard) {
     return (
       <div className="min-h-screen bg-[#F4F7FE] flex items-center justify-center">
         <p className="text-gray-600 font-semibold">
@@ -233,11 +248,17 @@ export default function UserDashboard() {
         </div>
       </div>
 
+      {message && (
+        <div className="mb-6 bg-blue-50 border border-blue-200 text-blue-700 p-4 rounded-2xl font-medium">
+          {message}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <InfoCard
           icon={<ShieldCheck className="text-blue-600" size={30} />}
           label="Guard Name"
-          value={guard.name}
+          value={guard.name || "Not added"}
         />
 
         <InfoCard
@@ -287,9 +308,7 @@ export default function UserDashboard() {
             <DetailRow
               icon={<BadgeCheck className="text-red-600" />}
               label="License No"
-              value={
-                guard.licenseNumber || guard.weaponNumber || "Not assigned"
-              }
+              value={guard.licenseNumber || guard.weaponNumber || "Not assigned"}
             />
           </div>
         </div>
@@ -303,6 +322,12 @@ export default function UserDashboard() {
             Guard can mark attendance only once per day.
           </p>
 
+          {guard.status !== "Active" && (
+            <div className="mb-5 bg-red-50 border border-red-200 text-red-700 p-4 rounded-2xl">
+              Your account is not active. Attendance cannot be marked.
+            </div>
+          )}
+
           {attendanceMarked && (
             <div className="mb-5 bg-green-50 border border-green-200 text-green-700 p-4 rounded-2xl">
               Attendance marked today at {attendanceTime}
@@ -311,10 +336,12 @@ export default function UserDashboard() {
 
           <button
             onClick={handleAttendance}
-            disabled={attendanceMarked}
+            disabled={attendanceMarked || guard.status !== "Active"}
             className={`w-full py-4 rounded-2xl font-bold text-white transition ${
               attendanceMarked
                 ? "bg-green-600 cursor-not-allowed"
+                : guard.status !== "Active"
+                ? "bg-gray-400 cursor-not-allowed"
                 : "bg-blue-600 hover:bg-blue-700"
             }`}
           >

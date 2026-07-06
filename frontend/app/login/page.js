@@ -2,19 +2,32 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { loginAdmin } from "../../services/dataService";
 
 export default function LoginPage() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    if (email && password) {
-      localStorage.setItem("token", "admin-token");
-      router.push("/dashboard");
-    } else {
+  const handleLogin = async () => {
+    if (!email || !password) {
       alert("Please enter email & password");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const { token } = await loginAdmin(email, password);
+      localStorage.setItem("token", token);
+      router.push("/dashboard");
+    } catch (error) {
+      alert(
+        error.response?.data?.message || "Login failed. Check email & password."
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -47,9 +60,10 @@ export default function LoginPage() {
 
         <button
           onClick={handleLogin}
-          className="w-full bg-blue-600 hover:bg-blue-700 transition-all duration-300 text-white py-3 rounded-lg font-bold"
+          disabled={loading}
+          className="w-full bg-blue-600 hover:bg-blue-700 transition-all duration-300 text-white py-3 rounded-lg font-bold disabled:opacity-60"
         >
-          Login
+          {loading ? "Logging in..." : "Login"}
         </button>
       </div>
     </div>

@@ -8,17 +8,23 @@ import {
   CalendarCheck,
   Wallet,
   Download,
-  Printer,
   CheckCircle2,
   XCircle,
   RefreshCcw,
   BadgeCheck,
-  AlertTriangle,
 } from "lucide-react";
+import {
+  fetchGuards,
+  fetchClients,
+  fetchAttendance,
+  fetchPayroll,
+  fetchLicenses,
+} from "../../../services/dataService";
 
 const COMPANY_NAME = "TIGHT SECURITY SERVICE (PVT) LTD";
 
 export default function ReportsPage() {
+  const [loading, setLoading] = useState(false);
   const [guards, setGuards] = useState([]);
   const [clients, setClients] = useState([]);
   const [attendance, setAttendance] = useState([]);
@@ -29,40 +35,34 @@ export default function ReportsPage() {
   );
   const [message, setMessage] = useState("");
 
-  const loadReportsData = () => {
+  const loadReportsData = async () => {
     try {
-      setGuards(JSON.parse(localStorage.getItem("guards")) || []);
-      setClients(JSON.parse(localStorage.getItem("clients")) || []);
-      setAttendance(JSON.parse(localStorage.getItem("attendanceRecords")) || []);
-      setPayroll(JSON.parse(localStorage.getItem("payrollRecords")) || []);
-      setLicenses(JSON.parse(localStorage.getItem("licenses")) || []);
-    } catch {
-      setGuards([]);
-      setClients([]);
-      setAttendance([]);
-      setPayroll([]);
-      setLicenses([]);
+      setLoading(true);
+
+      const [guardsData, clientsData, attendanceData, payrollData, licensesData] =
+        await Promise.all([
+          fetchGuards(),
+          fetchClients(),
+          fetchAttendance(),
+          fetchPayroll(),
+          fetchLicenses(),
+        ]);
+
+      setGuards(guardsData || []);
+      setClients(clientsData || []);
+      setAttendance(attendanceData || []);
+      setPayroll(payrollData || []);
+      setLicenses(licensesData || []);
+    } catch (error) {
+      console.error(error);
+      showMessage(error?.response?.data?.message || "Failed to load reports");
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
     loadReportsData();
-
-    window.addEventListener("storage", loadReportsData);
-    window.addEventListener("guards-updated", loadReportsData);
-    window.addEventListener("clients-updated", loadReportsData);
-    window.addEventListener("attendance-updated", loadReportsData);
-    window.addEventListener("payroll-updated", loadReportsData);
-    window.addEventListener("licenses-updated", loadReportsData);
-
-    return () => {
-      window.removeEventListener("storage", loadReportsData);
-      window.removeEventListener("guards-updated", loadReportsData);
-      window.removeEventListener("clients-updated", loadReportsData);
-      window.removeEventListener("attendance-updated", loadReportsData);
-      window.removeEventListener("payroll-updated", loadReportsData);
-      window.removeEventListener("licenses-updated", loadReportsData);
-    };
   }, []);
 
   const showMessage = (text) => {
@@ -121,8 +121,8 @@ export default function ReportsPage() {
     (item) => getLicenseStatus(item.expiryDate) === "Expired"
   ).length;
 
-  const handleRefresh = () => {
-    loadReportsData();
+  const handleRefresh = async () => {
+    await loadReportsData();
     showMessage("Reports refreshed successfully ✅");
   };
 
@@ -333,18 +333,21 @@ export default function ReportsPage() {
   const downloadPayrollReport = () => {
     let rows = "";
 
-    monthlyPayroll.forEach((item, index) => {
-      rows += `
-        <tr>
-          <td>${index + 1}</td>
-          <td>${item.guardName || ""}</td>
-          <td>${item.presentDays || item.presentCount || 0}</td>
-          <td>${item.salary || item.perDaySalary || 0}</td>
-          <td>${item.advance || item.deduction || 0}</td>
-          <td>${item.finalSalary || item.totalSalary || 0}</td>
-        </tr>
-      `;
-    });
+      monthlyPayroll.forEach((item, index) => {
+    rows += `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${item.guardName || ""}</td>
+        <td>${item.presentDays || 0}</td>
+        <td>${item.absentDays || 0}</td>
+        <td>${item.lateDays || 0}</td>
+        <td>${item.salary || 0}</td>
+        <td>${item.advance || 0}</td>
+        <td>${item.deduction || 0}</td>
+        <td>${item.finalSalary || 0}</td>
+      </tr>
+    `;
+  });
 
     openPrintWindow(
       "Monthly Payroll Report",
@@ -362,15 +365,18 @@ export default function ReportsPage() {
               <th>Sr.No#</th>
               <th>Guard Name</th>
               <th>Present Days</th>
-              <th>Salary / Per Day</th>
-              <th>Advance / Deduction</th>
+              <th>Absent Days</th>
+              <th>Late Days</th>
+              <th>Salary</th>
+              <th>Advance</th>
+              <th>Deduction</th>
               <th>Final Salary</th>
             </tr>
           </thead>
           <tbody>
             ${
               rows ||
-              `<tr><td colspan="6" style="text-align:center;">No payroll found.</td></tr>`
+              `<tr><td colspan="9" style="text-align:center;">No payroll found.</td></tr>`
             }
           </tbody>
         </table>
@@ -614,7 +620,13 @@ export default function ReportsPage() {
             </thead>
 
             <tbody>
-              {monthlyAttendance.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan="5" className="text-center py-12 text-gray-500">
+                    Loading reports...
+                    </td>
+                  </tr>
+                ) : monthlyAttendance.length === 0 ? (
                 <tr>
                   <td colSpan="5" className="text-center py-12 text-gray-500">
                     No attendance found for this month.
@@ -623,7 +635,7 @@ export default function ReportsPage() {
               ) : (
                 monthlyAttendance.slice(0, 8).map((item) => (
                   <tr
-                    key={item.id}
+                    key={item._id || item.id}
                     className="border-b border-gray-100 hover:bg-blue-50/40 transition"
                   >
                     <td className="px-6 py-5 font-semibold text-gray-800">

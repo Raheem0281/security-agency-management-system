@@ -21,6 +21,10 @@ import {
   LogOut,
   ChevronRight,
 } from "lucide-react";
+import {
+  fetchNotifications,
+  clearNotifications as clearNotificationsApi,
+} from "../../services/dataService";
 
 export default function DashboardLayout({ children }) {
   const router = useRouter();
@@ -65,20 +69,20 @@ export default function DashboardLayout({ children }) {
   }, []);
 
   useEffect(() => {
-    const loadNotifications = () => {
-      const saved =
-        JSON.parse(localStorage.getItem("adminNotifications")) || [];
-
-      setNotificationCount(saved.length);
+    const loadNotifications = async () => {
+      try {
+        const saved = await fetchNotifications();
+        setNotificationCount(saved.length);
+      } catch {
+        setNotificationCount(0);
+      }
     };
 
     loadNotifications();
 
-    window.addEventListener("storage", loadNotifications);
     window.addEventListener("notifications-updated", loadNotifications);
 
     return () => {
-      window.removeEventListener("storage", loadNotifications);
       window.removeEventListener("notifications-updated", loadNotifications);
     };
   }, []);
@@ -339,28 +343,32 @@ function NotificationDropdown({ darkMode }) {
   const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
-    const loadNotifications = () => {
-      const saved =
-        JSON.parse(localStorage.getItem("adminNotifications")) || [];
-
-      setNotifications(saved);
+    const loadNotifications = async () => {
+      try {
+        const saved = await fetchNotifications();
+        setNotifications(saved);
+      } catch {
+        setNotifications([]);
+      }
     };
 
     loadNotifications();
 
-    window.addEventListener("storage", loadNotifications);
     window.addEventListener("notifications-updated", loadNotifications);
 
     return () => {
-      window.removeEventListener("storage", loadNotifications);
       window.removeEventListener("notifications-updated", loadNotifications);
     };
   }, []);
 
-  const clearNotifications = () => {
-    localStorage.setItem("adminNotifications", JSON.stringify([]));
-    setNotifications([]);
-    window.dispatchEvent(new Event("notifications-updated"));
+  const clearNotifications = async () => {
+    try {
+      await clearNotificationsApi();
+      setNotifications([]);
+      window.dispatchEvent(new Event("notifications-updated"));
+    } catch {
+      // ignore
+    }
   };
 
   return (
